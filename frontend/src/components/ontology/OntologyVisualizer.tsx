@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, Select, Space, Button, Tag, Spin } from 'antd';
 import { ApartmentOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
 import cytoscape from 'cytoscape';
 import { mappingsApi } from '../../api/client';
-import type { MappingContent } from '../../types';
 
 const OntologyVisualizer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -11,6 +10,7 @@ const OntologyVisualizer: React.FC = () => {
   const [files, setFiles] = useState<{ path: string; filename: string }[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [nodeInfo, setNodeInfo] = useState<string>('');
 
   useEffect(() => {
     mappingsApi.list().then(({ data }) => {
@@ -19,60 +19,40 @@ const OntologyVisualizer: React.FC = () => {
     });
   }, []);
 
-  const buildGraph = async (filePath: string) => {
-    if (!filePath) return;
-    setLoading(true);
-    try {
-      const { data } = await mappingsApi.content(filePath);
-      const content = data as MappingContent;
-      renderGraph(content);
-    } catch (e) {
-      console.error('Failed to load mapping', e);
+  const renderGraph = useCallback((content: any) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Wait for container to be visible
+    if (container.clientHeight === 0) {
+      setTimeout(() => renderGraph(content), 100);
+      return;
     }
-    setLoading(false);
-  };
 
-  useEffect(() => {
-    if (selectedFile) buildGraph(selectedFile);
-  }, [selectedFile]);
-
-  const renderGraph = (content: MappingContent) => {
-    if (!containerRef.current) return;
-
-    // Destroy previous instance
+    // Destroy previous
     cyRef.current?.destroy();
+    cyRef.current = null;
 
     const nodes: cytoscape.ElementDefinition[] = [];
     const edges: cytoscape.ElementDefinition[] = [];
     const classSet = new Set<string>();
-    const propMap = new Map<string, { label: string; type: 'data' | 'object'; from: string; to: string }>();
 
-    // Parse mappings to extract classes, properties, relationships
     for (const m of content.mappings) {
-      const target = m.target;
+      const target: string = m.target;
 
-      // Extract classes from "a <class_uri>"
-      const classMatches = target.matchAll(/a\s+<([^>]+)>/g);
-      for (const cm of classMatches) {
-        const cls = cm[1].split('/').pop() || cm[1];
-        classSet.add(cls);
+      // Extract classes
+      for (const cm of target.matchAll(/a\s+<([^>]+)>/g)) {
+        classSet.add(cm[1].split('/').pop()!);
       }
 
-      // Check if this is a relationship mapping (contains ref-)
-      const isRelation = target.includes('#ref-');
-
-      if (isRelation) {
-        // Extract subject class
+      if (target.includes('#ref-')) {
+        // Relationship mapping
         const subjectMatch = target.match(/<([^>]+)\/([^\/]+)\/[^=]+=/);
-        const subjectClass = subjectMatch ? subjectMatch[2] : 'unknown';
-
-        // Extract object class
-        const objectMatch = target.match(/<[^>]+#ref-[^>]+>\s+<([^>]+)\/([^\/]+)\/[^=]+=/);
-        const objectClass = objectMatch ? objectMatch[2] : 'unknown';
-
-        // Extract property name
-        const propMatch = target.match(/#([^>]+ref-[^>]+)>/);
-        const propName = propMatch ? propMatch[1] : 'ref';
+        const subjectClass = subjectMatch?.[2] || 'unknown';
+        const objectMatch = [...target.matchAll(/<[^>]+#ref-[^>]+>\s+<([^>]+)\/([^\/]+)\/[^=]+=/g)];
+        const objectClass = objectMatch.length > 0 ? objectMatch[0][2] : 'unknown';
+        const propMatch = target.match(/#([^>]*ref-[^>]*)>/);
+        const propName = propMatch?.[1] || 'ref';
 
         classSet.add(subjectClass);
         classSet.add(objectClass);
@@ -83,38 +63,28 @@ const OntologyVisualizer: React.FC = () => {
             source: subjectClass,
             target: objectClass,
             label: propName,
-            type: 'object',
           },
         });
       } else {
-        // Class mapping - extract data properties
+        // Class mapping
         const classMatch = target.match(/a\s+<([^>]+)>/);
-        const className = classMatch ? (classMatch[1].split('/').pop() || 'unknown') : 'unknown';
+        const className = classMatch?.[1].split('/').pop() || 'unknown';
         classSet.add(className);
 
-        // Extract data properties
-        const propMatches = target.matchAll(/<[^>]+#([^>]+)>\s+\{/g);
         const props: string[] = [];
-        for (const pm of propMatches) {
-          const pName = pm[1];
-          if (!pName.startsWith('ref-')) {
-            props.push(pName);
-          }
+        for (const pm of target.matchAll(/<[^>]+#([^>]+)>\s+\{/g)) {
+          if (!pm[1].startsWith('ref-')) props.push(pm[1]);
         }
 
-        // Store props as node metadata
-        const existingNode = nodes.find(n => n.data.id === className);
-        if (existingNode) {
-          existingNode.data.props = [...new Set([...(existingNode.data.props || []), ...props])];
+        const existing = nodes.find(n => n.data.id === className);
+        if (existing) {
+          existing.data.props = [...new Set([...(existing.data.props || []), ...props])];
         } else {
-          nodes.push({
-            data: { id: className, label: className, props },
-          });
+          nodes.push({ data: { id: className, label: className, props } });
         }
       }
     }
 
-    // Ensure all classes have nodes
     for (const cls of classSet) {
       if (!nodes.find(n => n.data.id === cls)) {
         nodes.push({ data: { id: cls, label: cls, props: [] } });
@@ -122,67 +92,87 @@ const OntologyVisualizer: React.FC = () => {
     }
 
     const cy = cytoscape({
-      container: containerRef.current,
+      container,
       elements: [...nodes, ...edges],
       style: [
         {
           selector: 'node',
           style: {
-            'label': 'data(label)',
+            label: 'data(label)',
             'text-valign': 'center',
             'text-halign': 'center',
             'background-color': '#1677ff',
-            'color': '#fff',
+            color: '#fff',
             'font-size': 14,
             'font-weight': 'bold',
             'text-outline-width': 2,
             'text-outline-color': '#1677ff',
-            'width': 120,
-            'height': 60,
-            'shape': 'round-rectangle',
+            width: 140,
+            height: 70,
+            shape: 'round-rectangle',
             'text-wrap': 'wrap',
-            'text-max-width': 110,
-          } as cytoscape.Stylesheet,
+            'text-max-width': 130,
+          },
         },
         {
           selector: 'edge',
           style: {
-            'width': 2,
+            width: 2,
             'line-color': '#999',
             'target-arrow-color': '#999',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            'label': 'data(label)',
+            label: 'data(label)',
             'font-size': 11,
             'text-rotation': 'autorotate',
-            'text-outline-width': 2,
+            'text-outline-width': 3,
             'text-outline-color': '#fff',
-            'color': '#666',
-          } as cytoscape.Stylesheet,
+            color: '#555',
+          },
         },
-        {
-          selector: 'node:active',
-          style: {
-            'overlay-opacity': 0.1,
-          } as cytoscape.Stylesheet,
-        },
-      ],
+      ] as cytoscape.Stylesheet[],
       layout: {
         name: 'cose',
-        padding: 50,
-        nodeRepulsion: 8000,
-        idealEdgeLength: 150,
+        padding: 60,
+        nodeRepulsion: () => 10000,
+        idealEdgeLength: () => 180,
         animate: true,
-        animationDuration: 500,
+        animationDuration: 800,
+        randomize: true,
       },
     });
 
-    cyRef.current = cy;
-  };
+    // Click node to show properties
+    cy.on('tap', 'node', (evt) => {
+      const node = evt.target;
+      const props: string[] = node.data('props') || [];
+      setNodeInfo(
+        `类: ${node.id()}\n数据属性: ${props.length > 0 ? props.join(', ') : '无'}\n` +
+        `出边: ${node.outgoers('edge').size} 条 | 入边: ${node.incomers('edge').size} 条`
+      );
+    });
 
-  const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.3);
-  const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() / 1.3);
-  const handleFit = () => cyRef.current?.fit(undefined, 50);
+    cyRef.current = cy;
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFile) return;
+    setLoading(true);
+    mappingsApi.content(selectedFile).then(({ data }) => {
+      renderGraph(data);
+    }).catch(() => setLoading(false));
+  }, [selectedFile, renderGraph]);
+
+  const handleZoomIn = () => {
+    const cy = cyRef.current;
+    if (cy) cy.zoom({ level: cy.zoom() * 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+  };
+  const handleZoomOut = () => {
+    const cy = cyRef.current;
+    if (cy) cy.zoom({ level: cy.zoom() / 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+  };
+  const handleFit = () => cyRef.current?.fit(undefined, 60);
 
   return (
     <div>
@@ -203,18 +193,27 @@ const OntologyVisualizer: React.FC = () => {
           </Space>
         }
       >
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" tip="加载中..." /></div>
-        ) : (
-          <div ref={containerRef} style={{ width: '100%', height: 500, border: '1px solid #f0f0f0', borderRadius: 8 }} />
-        )}
+        <div style={{ position: 'relative', width: '100%', height: 500, border: '1px solid #f0f0f0', borderRadius: 8 }}>
+          <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+          {loading && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.7)', borderRadius: 8 }}>
+              <Spin size="large" />
+            </div>
+          )}
+        </div>
       </Card>
 
+      {nodeInfo && (
+        <Card title="节点详情" style={{ marginTop: 12 }} size="small">
+          <pre style={{ margin: 0, fontSize: 13, whiteSpace: 'pre-wrap' }}>{nodeInfo}</pre>
+        </Card>
+      )}
+
       <Card title="图例" style={{ marginTop: 12 }} size="small">
-        <Space>
+        <Space wrap>
           <Tag color="blue">蓝色方块 = 类（Entity Type）</Tag>
-          <Tag color="default">箭头连线 = 对象属性（关系）</Tag>
-          <Tag color="green">节点属性 = 数据属性（字段）</Tag>
+          <Tag>箭头连线 = 对象属性（关系）</Tag>
+          <Tag color="green">点击节点查看数据属性</Tag>
         </Space>
       </Card>
     </div>
