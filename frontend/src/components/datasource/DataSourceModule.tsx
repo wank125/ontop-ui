@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Input, Select, Space, message, Tree, Steps, Spin, Tag,
+  Card, Table, Button, Modal, Form, Input, Select, Space, message, Tree, Steps, Spin, Tag, Tooltip,
 } from 'antd';
 import {
-  PlusOutlined, DeleteOutlined, ReloadOutlined, ThunderboltOutlined, LinkOutlined,
+  PlusOutlined, DeleteOutlined, ReloadOutlined, ThunderboltOutlined, LinkOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { datasourcesApi } from '../../api/client';
 import type { DataSource, DataSourceForm } from '../../types';
@@ -116,18 +116,18 @@ const DataSourceModule: React.FC = () => {
   };
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
+    { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
     { title: 'JDBC URL', dataIndex: 'jdbc_url', key: 'jdbc_url', ellipsis: true },
-    { title: '用户', dataIndex: 'user', key: 'user' },
-    { title: '驱动', dataIndex: 'driver', key: 'driver' },
+    { title: '用户', dataIndex: 'user', key: 'user', width: 80 },
+    { title: '驱动', dataIndex: 'driver', key: 'driver', width: 180 },
     {
-      title: '操作', key: 'actions',
+      title: '操作', key: 'actions', width: 200,
       render: (_: any, record: DataSource) => (
-        <Space>
-          <Button size="small" icon={<LinkOutlined />} onClick={() => handleTest(record.id)}>测试</Button>
-          <Button size="small" onClick={() => handleViewSchema(record.id)}>Schema</Button>
-          <Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => openBootstrap(record.id)}>Bootstrap</Button>
-          <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+        <Space size={4} wrap>
+          <Tooltip title="测试连接"><Button size="small" icon={<LinkOutlined />} onClick={() => handleTest(record.id)} /></Tooltip>
+          <Tooltip title="查看 Schema"><Button size="small" icon={<SearchOutlined />} onClick={() => handleViewSchema(record.id)} /></Tooltip>
+          <Tooltip title="Bootstrap 自动生成本体和映射"><Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => openBootstrap(record.id)} /></Tooltip>
+          <Tooltip title="删除"><Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} /></Tooltip>
         </Space>
       ),
     },
