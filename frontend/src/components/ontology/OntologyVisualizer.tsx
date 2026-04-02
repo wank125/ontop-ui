@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Card, Select, Space, Button, Tag, Spin } from 'antd';
-import { ApartmentOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
+import { Card, Select, Space, Button, Tag, Spin, Tooltip, Drawer, Descriptions } from 'antd';
+import { ApartmentOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import cytoscape from 'cytoscape';
 import { mappingsApi } from '../../api/client';
 
@@ -10,7 +10,9 @@ const OntologyVisualizer: React.FC = () => {
   const [files, setFiles] = useState<{ path: string; filename: string }[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [nodeInfo, setNodeInfo] = useState<string>('');
+  const [nodeInfo, setNodeInfo] = useState<any>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [nodeCount, setNodeCount] = useState(0);
 
   useEffect(() => {
     mappingsApi.list().then(({ data }) => {
@@ -19,20 +21,7 @@ const OntologyVisualizer: React.FC = () => {
     });
   }, []);
 
-  const renderGraph = useCallback((content: any) => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Wait for container to be visible
-    if (container.clientHeight === 0) {
-      setTimeout(() => renderGraph(content), 100);
-      return;
-    }
-
-    // Destroy previous
-    cyRef.current?.destroy();
-    cyRef.current = null;
-
+  const parseContent = useCallback((content: any) => {
     const nodes: cytoscape.ElementDefinition[] = [];
     const edges: cytoscape.ElementDefinition[] = [];
     const classSet = new Set<string>();
@@ -40,13 +29,11 @@ const OntologyVisualizer: React.FC = () => {
     for (const m of content.mappings) {
       const target: string = m.target;
 
-      // Extract classes
       for (const cm of target.matchAll(/a\s+<([^>]+)>/g)) {
         classSet.add(cm[1].split('/').pop()!);
       }
 
       if (target.includes('#ref-')) {
-        // Relationship mapping
         const subjectMatch = target.match(/<([^>]+)\/([^\/]+)\/[^=]+=/);
         const subjectClass = subjectMatch?.[2] || 'unknown';
         const objectMatch = [...target.matchAll(/<[^>]+#ref-[^>]+>\s+<([^>]+)\/([^\/]+)\/[^=]+=/g)];
@@ -66,7 +53,6 @@ const OntologyVisualizer: React.FC = () => {
           },
         });
       } else {
-        // Class mapping
         const classMatch = target.match(/a\s+<([^>]+)>/);
         const className = classMatch?.[1].split('/').pop() || 'unknown';
         classSet.add(className);
@@ -91,70 +77,217 @@ const OntologyVisualizer: React.FC = () => {
       }
     }
 
-    const cy = cytoscape({
-      container,
-      elements: [...nodes, ...edges],
-      style: [
-        {
-          selector: 'node',
-          style: {
-            label: 'data(label)',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'background-color': '#1677ff',
-            color: '#fff',
-            'font-size': 14,
-            'font-weight': 'bold',
-            'text-outline-width': 2,
-            'text-outline-color': '#1677ff',
-            width: 140,
-            height: 70,
-            shape: 'round-rectangle',
-            'text-wrap': 'wrap',
-            'text-max-width': 130,
-          },
+    return { nodes, edges };
+  }, []);
+
+  const renderGraph = useCallback((content: any) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (container.clientHeight === 0 || container.clientWidth === 0) {
+      requestAnimationFrame(() => renderGraph(content));
+      return;
+    }
+
+    cyRef.current?.destroy();
+    cyRef.current = null;
+
+    const { nodes, edges } = parseContent(content);
+    setNodeCount(nodes.length);
+
+    const styles: cytoscape.Stylesheet[] = [
+      {
+        selector: 'node',
+        style: {
+          label: 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'background-color': '#1677ff',
+          color: '#fff',
+          'font-size': 13,
+          'font-weight': 'bold',
+          'text-outline-width': 2,
+          'text-outline-color': '#1677ff',
+          width: 120,
+          height: 56,
+          shape: 'round-rectangle',
+          'text-wrap': 'wrap',
+          'text-max-width': 110,
+          'transition-property': 'background-color, border-width, border-color',
+          'transition-duration': '0.2s',
         },
-        {
-          selector: 'edge',
-          style: {
-            width: 2,
-            'line-color': '#999',
-            'target-arrow-color': '#999',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            label: 'data(label)',
-            'font-size': 11,
-            'text-rotation': 'autorotate',
-            'text-outline-width': 3,
-            'text-outline-color': '#fff',
-            color: '#555',
-          },
-        },
-      ] as cytoscape.Stylesheet[],
-      layout: {
-        name: 'cose',
-        padding: 60,
-        nodeRepulsion: () => 10000,
-        idealEdgeLength: () => 180,
-        animate: true,
-        animationDuration: 800,
-        randomize: true,
       },
+      {
+        selector: 'node:hover',
+        style: {
+          'background-color': '#4096ff',
+          'border-width': 3,
+          'border-color': '#69b1ff',
+          'cursor': 'pointer',
+        },
+      },
+      {
+        selector: 'node.selected',
+        style: {
+          'background-color': '#1677ff',
+          'border-width': 3,
+          'border-color': '#ffa940',
+        },
+      },
+      {
+        selector: 'node.dimmed',
+        style: {
+          'background-color': '#d9d9d9',
+          color: '#bbb',
+          'text-outline-color': '#d9d9d9',
+          opacity: 0.4,
+        },
+      },
+      {
+        selector: 'edge',
+        style: {
+          width: 2,
+          'line-color': '#bfbfbf',
+          'target-arrow-color': '#bfbfbf',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          label: 'data(label)',
+          'font-size': 11,
+          'text-rotation': 'autorotate',
+          'text-outline-width': 3,
+          'text-outline-color': '#fff',
+          color: '#666',
+          'text-background-opacity': 1,
+          'text-background-color': '#fff',
+          'text-background-padding': '2px',
+          'transition-property': 'line-color, target-arrow-color, width',
+          'transition-duration': '0.2s',
+        },
+      },
+      {
+        selector: 'edge:hover',
+        style: {
+          width: 3,
+          'line-color': '#1677ff',
+          'target-arrow-color': '#1677ff',
+          color: '#1677ff',
+          'font-size': 12,
+        },
+      },
+      {
+        selector: 'edge.highlighted',
+        style: {
+          width: 3,
+          'line-color': '#1677ff',
+          'target-arrow-color': '#1677ff',
+          color: '#1677ff',
+        },
+      },
+      {
+        selector: 'edge.dimmed',
+        style: {
+          'line-color': '#e8e8e8',
+          'target-arrow-color': '#e8e8e8',
+          opacity: 0.3,
+          label: '',
+        },
+      },
+    ];
+
+    const cy = cytoscape({
+      elements: [...nodes, ...edges],
+      style: styles,
+      headless: true,
     });
 
-    // Click node to show properties
+    cy.mount(container);
+    requestAnimationFrame(() => {
+      cy.resize();
+      const n = nodes.length;
+      let layoutOpts: any;
+      if (n <= 6) {
+        layoutOpts = {
+          name: 'circle',
+          padding: 60,
+          spacingFactor: 1.2,
+          animate: true,
+          animationDuration: 500,
+          fit: true,
+        };
+      } else if (n <= 15) {
+        layoutOpts = {
+          name: 'cose',
+          padding: 60,
+          nodeRepulsion: () => 8000,
+          idealEdgeLength: () => 100,
+          animate: true,
+          animationDuration: 600,
+          fit: true,
+        };
+      } else {
+        layoutOpts = {
+          name: 'cose',
+          padding: 40,
+          nodeRepulsion: () => 12000,
+          idealEdgeLength: () => 80,
+          animate: true,
+          animationDuration: 800,
+          fit: true,
+        };
+      }
+      const layout = cy.layout(layoutOpts);
+      layout.run();
+    });
+
+    // Click node: highlight neighborhood + show drawer
     cy.on('tap', 'node', (evt) => {
       const node = evt.target;
       const props: string[] = node.data('props') || [];
-      setNodeInfo(
-        `类: ${node.id()}\n数据属性: ${props.length > 0 ? props.join(', ') : '无'}\n` +
-        `出边: ${node.outgoers('edge').size} 条 | 入边: ${node.incomers('edge').size} 条`
-      );
+
+      // Reset all
+      cy.elements().removeClass('selected highlighted dimmed');
+
+      if (node.hasClass('selected')) {
+        setNodeInfo(null);
+        setDrawerOpen(false);
+        return;
+      }
+
+      // Highlight selected + neighborhood
+      node.addClass('selected');
+      node.neighborhood().addClass('highlighted');
+      cy.elements().not(node).not(node.neighborhood()).addClass('dimmed');
+
+      const outgoing = node.outgoers('edge').map(e => ({
+        label: e.data('label'),
+        target: e.target().id(),
+      }));
+      const incoming = node.incomers('edge').map(e => ({
+        label: e.data('label'),
+        source: e.source().id(),
+      }));
+
+      setNodeInfo({
+        id: node.id(),
+        props,
+        outgoing,
+        incoming,
+      });
+      setDrawerOpen(true);
+    });
+
+    // Click background: reset highlight
+    cy.on('tap', (evt) => {
+      if (evt.target === cy) {
+        cy.elements().removeClass('selected highlighted dimmed');
+        setNodeInfo(null);
+        setDrawerOpen(false);
+      }
     });
 
     cyRef.current = cy;
     setLoading(false);
-  }, []);
+  }, [parseContent]);
 
   useEffect(() => {
     if (!selectedFile) return;
@@ -173,6 +306,8 @@ const OntologyVisualizer: React.FC = () => {
     if (cy) cy.zoom({ level: cy.zoom() / 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
   };
   const handleFit = () => cyRef.current?.fit(undefined, 60);
+
+  const canvasHeight = Math.max(400, Math.min(700, nodeCount * 60 + 200));
 
   return (
     <div>
@@ -193,29 +328,69 @@ const OntologyVisualizer: React.FC = () => {
           </Space>
         }
       >
-        <div style={{ position: 'relative', width: '100%', height: 500, border: '1px solid #f0f0f0', borderRadius: 8 }}>
+        <div style={{ position: 'relative', width: '100%', height: canvasHeight, border: '1px solid #f0f0f0', borderRadius: 8, textAlign: 'left' }}>
           <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
           {loading && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.7)', borderRadius: 8 }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.7)', borderRadius: 8, zIndex: 10 }}>
               <Spin size="large" />
             </div>
           )}
+          {/* Inline legend */}
+          <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 8, zIndex: 5 }}>
+            <Tag color="blue" style={{ margin: 0 }}>类（Entity Type）</Tag>
+            <Tag style={{ margin: 0 }}>箭头 = 对象属性（关系）</Tag>
+            <Tag color="green" style={{ margin: 0 }}>点击节点查看详情</Tag>
+          </div>
         </div>
       </Card>
 
-      {nodeInfo && (
-        <Card title="节点详情" style={{ marginTop: 12 }} size="small">
-          <pre style={{ margin: 0, fontSize: 13, whiteSpace: 'pre-wrap' }}>{nodeInfo}</pre>
-        </Card>
-      )}
+      {/* Node detail drawer */}
+      <Drawer
+        title={<span><InfoCircleOutlined /> 节点详情</span>}
+        placement="right"
+        width={360}
+        open={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          cyRef.current?.elements().removeClass('selected highlighted dimmed');
+        }}
+      >
+        {nodeInfo && (
+          <div>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="类名">{nodeInfo.id}</Descriptions.Item>
+              <Descriptions.Item label="数据属性">
+                {nodeInfo.props.length > 0
+                  ? nodeInfo.props.map((p: string) => <Tag key={p} style={{ marginBottom: 2 }}>{p}</Tag>)
+                  : <span style={{ color: '#999' }}>无</span>
+                }
+              </Descriptions.Item>
+            </Descriptions>
 
-      <Card title="图例" style={{ marginTop: 12 }} size="small">
-        <Space wrap>
-          <Tag color="blue">蓝色方块 = 类（Entity Type）</Tag>
-          <Tag>箭头连线 = 对象属性（关系）</Tag>
-          <Tag color="green">点击节点查看数据属性</Tag>
-        </Space>
-      </Card>
+            {nodeInfo.outgoing.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>出边关系</div>
+                {nodeInfo.outgoing.map((e: any, i: number) => (
+                  <div key={i} style={{ marginBottom: 4, fontSize: 13 }}>
+                    <Tag color="blue">{e.label}</Tag> → <Tag>{e.target}</Tag>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {nodeInfo.incoming.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>入边关系</div>
+                {nodeInfo.incoming.map((e: any, i: number) => (
+                  <div key={i} style={{ marginBottom: 4, fontSize: 13 }}>
+                    <Tag>{e.source}</Tag> → <Tag color="blue">{e.label}</Tag>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 };
