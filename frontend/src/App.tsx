@@ -11,6 +11,7 @@ import DataSourceModule from './components/datasource/DataSourceModule';
 import MappingModule from './components/mapping/MappingModule';
 import SparqlModule from './components/sparql/SparqlModule';
 import AIModule from './components/ai/AIModule';
+import OntologyVisualizer from './components/ontology/OntologyVisualizer';
 import { sparqlApi } from './api/client';
 import type { EndpointStatus } from './types';
 
@@ -55,6 +56,11 @@ const App: React.FC = () => {
       key: 'ai',
       label: <span><RobotOutlined /> AI 助手</span>,
       children: <AIModule />,
+    },
+    {
+      key: 'ontology',
+      label: <span><ApartmentOutlined /> 本体可视化</span>,
+      children: <OntologyVisualizer />,
     },
   ];
 
