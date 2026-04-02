@@ -1,0 +1,83 @@
+"""Mapping editor router."""
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+
+from models.mapping import MappingContent, ValidateRequest, RestartEndpointRequest
+from services.obda_parser import parse_obda, serialize_obda
+from services.ontop_cli import validate as ontop_validate
+from services.ontop_endpoint import start_endpoint, stop_endpoint
+from config import ONTOP_OUTPUT, ONTOLOGY_FILE, MAPPING_FILE, PROPERTIES_FILE
+
+router = APIRouter(prefix="/mappings", tags=["mappings"])
+
+
+@router.get("")
+async def list_mappings():
+    """List available .obda files in the output directory."""
+    files = []
+    search_dirs = [ONTOP_OUTPUT]
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for f in d.glob("**/*.obda"):
+            stat = f.stat()
+            files.append({
+                "path": str(f),
+                "filename": f.name,
+                "modified_at": stat.st_mtime,
+            })
+    return files
+
+
+@router.get("/{path:path}/content")
+async def get_mapping_content(path: str):
+    """Read and parse an .obda file."""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise HTTPException(404, f"File not found: {path}")
+
+    content = file_path.read_text(encoding="utf-8")
+    parsed = parse_obda(content)
+    return parsed.model_dump()
+
+
+@router.put("/{path:path}/content")
+async def save_mapping_content(path: str, content: MappingContent):
+    """Save modified .obda file."""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise HTTPException(404, f"File not found: {path}")
+
+    serialized = serialize_obda(content)
+    file_path.write_text(serialized, encoding="utf-8")
+    return {"success": True}
+
+
+@router.post("/{path:path}/validate")
+async def validate_mapping(path: str, req: ValidateRequest):
+    """Validate a mapping file."""
+    ontology_path = req.ontology_path or str(ONTOLOGY_FILE)
+    properties_path = req.properties_path or str(PROPERTIES_FILE)
+
+    success, output = await ontop_validate(
+        mapping_path=path,
+        ontology_path=ontology_path,
+        properties_path=properties_path,
+    )
+    return {"valid": success, "errors": [] if success else [output[:500]]}
+
+
+@router.post("/restart-endpoint")
+async def restart_endpoint(req: RestartEndpointRequest):
+    """Restart the Ontop endpoint with specified config."""
+    success, msg = await start_endpoint(
+        ontology_path=req.ontology_path,
+        mapping_path=req.mapping_path,
+        properties_path=req.properties_path,
+        port=req.port,
+    )
+    if not success:
+        raise HTTPException(500, f"Failed to start endpoint: {msg[:500]}")
+    return {"success": True, "message": "Endpoint restarted"}

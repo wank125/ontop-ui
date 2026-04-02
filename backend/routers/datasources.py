@@ -1,0 +1,161 @@
+"""Data source management router."""
+import json
+import uuid
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+
+from models.datasource import DataSource, DataSourceCreate, DataSourceUpdate, BootstrapRequest
+from services.ontop_cli import extract_db_metadata, bootstrap as ontop_bootstrap
+from config import DATA_DIR
+
+router = APIRouter(prefix="/datasources", tags=["datasources"])
+
+DATA_SOURCES_FILE = DATA_DIR / "datasources.json"
+
+
+def _load_data_sources() -> list[dict]:
+    if not DATA_SOURCES_FILE.exists():
+        return []
+    with open(DATA_SOURCES_FILE) as f:
+        return json.load(f)
+
+
+def _save_data_sources(sources: list[dict]):
+    with open(DATA_SOURCES_FILE, "w") as f:
+        json.dump(sources, f, indent=2, ensure_ascii=False)
+
+
+@router.get("")
+async def list_datasources():
+    return _load_data_sources()
+
+
+@router.post("", status_code=201)
+async def create_datasource(data: DataSourceCreate):
+    sources = _load_data_sources()
+    ds = {
+        "id": str(uuid.uuid4())[:8],
+        "name": data.name,
+        "jdbc_url": data.jdbc_url,
+        "user": data.user,
+        "password": data.password,
+        "driver": data.driver,
+        "created_at": datetime.now().isoformat(),
+    }
+    sources.append(ds)
+    _save_data_sources(sources)
+    return ds
+
+
+@router.get("/{ds_id}")
+async def get_datasource(ds_id: str):
+    sources = _load_data_sources()
+    for s in sources:
+        if s["id"] == ds_id:
+            return s
+    raise HTTPException(404, "Data source not found")
+
+
+@router.put("/{ds_id}")
+async def update_datasource(ds_id: str, data: DataSourceUpdate):
+    sources = _load_data_sources()
+    for s in sources:
+        if s["id"] == ds_id:
+            for k, v in data.model_dump(exclude_none=True).items():
+                s[k] = v
+            _save_data_sources(sources)
+            return s
+    raise HTTPException(404, "Data source not found")
+
+
+@router.delete("/{ds_id}", status_code=204)
+async def delete_datasource(ds_id: str):
+    sources = _load_data_sources()
+    sources = [s for s in sources if s["id"] != ds_id]
+    _save_data_sources(sources)
+
+
+@router.post("/{ds_id}/test")
+async def test_connection(ds_id: str):
+    ds = _get_ds(ds_id)
+    props_path = _write_temp_properties(ds)
+    try:
+        success, output = await extract_db_metadata(props_path)
+        return {"connected": success, "message": output[:500] if not success else "Connection successful"}
+    finally:
+        Path(props_path).unlink(missing_ok=True)
+
+
+@router.get("/{ds_id}/schema")
+async def get_schema(ds_id: str):
+    ds = _get_ds(ds_id)
+    props_path = _write_temp_properties(ds)
+    try:
+        success, output = await extract_db_metadata(props_path)
+        if not success:
+            raise HTTPException(400, f"Failed to extract metadata: {output[:500]}")
+        import json as json_mod
+        try:
+            return json_mod.loads(output)
+        except json_mod.JSONDecodeError:
+            return {"raw": output}
+    finally:
+        Path(props_path).unlink(missing_ok=True)
+
+
+@router.post("/{ds_id}/bootstrap")
+async def run_bootstrap(ds_id: str, req: BootstrapRequest):
+    ds = _get_ds(ds_id)
+    output_dir = req.output_dir or str(Path(DATA_DIR) / ds["id"])
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    base_name = ds["name"].replace(" ", "_")
+    props_path = f"{output_dir}/{base_name}.properties"
+    onto_path = f"{output_dir}/{base_name}_ontology.ttl"
+    mapping_path = f"{output_dir}/{base_name}_mapping.obda"
+
+    _write_properties(ds, props_path)
+
+    success, output = await ontop_bootstrap(
+        base_iri=req.base_iri,
+        ontology_path=onto_path,
+        mapping_path=mapping_path,
+        properties_path=props_path,
+    )
+
+    if not success:
+        raise HTTPException(400, f"Bootstrap failed: {output[:500]}")
+
+    return {
+        "ontology_path": onto_path,
+        "mapping_path": mapping_path,
+        "properties_path": props_path,
+        "output": output[:1000],
+    }
+
+
+def _get_ds(ds_id: str) -> dict:
+    sources = _load_data_sources()
+    for s in sources:
+        if s["id"] == ds_id:
+            return s
+    raise HTTPException(404, "Data source not found")
+
+
+def _write_properties(ds: dict, path: str):
+    with open(path, "w") as f:
+        f.write(f"jdbc.url={ds['jdbc_url']}\n")
+        f.write(f"jdbc.user={ds['user']}\n")
+        f.write(f"jdbc.password={ds['password']}\n")
+        f.write(f"jdbc.driver={ds['driver']}\n")
+
+
+def _write_temp_properties(ds: dict) -> str:
+    tmp = tempfile.NamedTemporaryFile(suffix=".properties", delete=False, mode="w")
+    _write_properties(ds, tmp.name)
+    tmp.close()
+    return tmp.name
