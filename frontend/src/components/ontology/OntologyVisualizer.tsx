@@ -102,14 +102,15 @@ const OntologyVisualizer: React.FC = () => {
           label: 'data(label)',
           'text-valign': 'center',
           'text-halign': 'center',
-          'background-color': '#1677ff',
-          color: '#fff',
-          'font-size': 13,
-          'font-weight': 'bold',
-          'text-outline-width': 2,
-          'text-outline-color': '#1677ff',
+          'background-color': '#1c2438',
+          'border-width': 2,
+          'border-color': '#0ea5e9',
+          color: '#e2e8f0',
+          'font-size': 12,
+          'font-weight': 600,
+          'text-outline-width': 0,
           width: 120,
-          height: 56,
+          height: 48,
           shape: 'round-rectangle',
           'text-wrap': 'wrap',
           'text-max-width': 110,
@@ -120,46 +121,46 @@ const OntologyVisualizer: React.FC = () => {
       {
         selector: 'node:hover',
         style: {
-          'background-color': '#4096ff',
-          'border-width': 3,
-          'border-color': '#69b1ff',
+          'background-color': '#1e2a40',
+          'border-color': '#38bdf8',
+          'border-width': 2,
           'cursor': 'pointer',
         },
       },
       {
         selector: 'node.selected',
         style: {
-          'background-color': '#1677ff',
-          'border-width': 3,
-          'border-color': '#ffa940',
+          'background-color': '#0ea5e9',
+          'border-color': '#38bdf8',
+          'border-width': 2,
+          color: '#fff',
         },
       },
       {
         selector: 'node.dimmed',
         style: {
-          'background-color': '#d9d9d9',
-          color: '#bbb',
-          'text-outline-color': '#d9d9d9',
-          opacity: 0.4,
+          'background-color': '#1a1f2e',
+          'border-color': '#2a3040',
+          color: '#4a5568',
+          opacity: 0.5,
         },
       },
       {
         selector: 'edge',
         style: {
-          width: 2,
-          'line-color': '#bfbfbf',
-          'target-arrow-color': '#bfbfbf',
+          width: 1.5,
+          'line-color': '#334155',
+          'target-arrow-color': '#475569',
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier',
           label: 'data(label)',
-          'font-size': 11,
+          'font-size': 10,
           'text-rotation': 'autorotate',
-          'text-outline-width': 3,
-          'text-outline-color': '#fff',
-          color: '#666',
+          'text-outline-width': 0,
+          color: '#64748b',
           'text-background-opacity': 1,
-          'text-background-color': '#fff',
-          'text-background-padding': '2px',
+          'text-background-color': '#161c2e',
+          'text-background-padding': '3px',
           'transition-property': 'line-color, target-arrow-color, width',
           'transition-duration': '0.2s',
         },
@@ -167,27 +168,27 @@ const OntologyVisualizer: React.FC = () => {
       {
         selector: 'edge:hover',
         style: {
-          width: 3,
-          'line-color': '#1677ff',
-          'target-arrow-color': '#1677ff',
-          color: '#1677ff',
-          'font-size': 12,
+          width: 2.5,
+          'line-color': '#0ea5e9',
+          'target-arrow-color': '#0ea5e9',
+          color: '#38bdf8',
+          'font-size': 11,
         },
       },
       {
         selector: 'edge.highlighted',
         style: {
-          width: 3,
-          'line-color': '#1677ff',
-          'target-arrow-color': '#1677ff',
-          color: '#1677ff',
+          width: 2.5,
+          'line-color': '#0ea5e9',
+          'target-arrow-color': '#0ea5e9',
+          color: '#38bdf8',
         },
       },
       {
         selector: 'edge.dimmed',
         style: {
-          'line-color': '#e8e8e8',
-          'target-arrow-color': '#e8e8e8',
+          'line-color': '#1e2536',
+          'target-arrow-color': '#1e2536',
           opacity: 0.3,
           label: '',
         },
@@ -328,18 +329,18 @@ const OntologyVisualizer: React.FC = () => {
           </Space>
         }
       >
-        <div style={{ position: 'relative', width: '100%', height: canvasHeight, border: '1px solid #f0f0f0', borderRadius: 8, textAlign: 'left' }}>
+        <div style={{ position: 'relative', width: '100%', height: canvasHeight, background: '#0d1117', border: '1px solid rgba(148,163,184,0.08)', borderRadius: 8, textAlign: 'left', overflow: 'hidden' }}>
           <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
           {loading && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.7)', borderRadius: 8, zIndex: 10 }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(13,17,23,0.8)', borderRadius: 8, zIndex: 10 }}>
               <Spin size="large" />
             </div>
           )}
           {/* Inline legend */}
-          <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 8, zIndex: 5 }}>
-            <Tag color="blue" style={{ margin: 0 }}>类（Entity Type）</Tag>
-            <Tag style={{ margin: 0 }}>箭头 = 对象属性（关系）</Tag>
-            <Tag color="green" style={{ margin: 0 }}>点击节点查看详情</Tag>
+          <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 6, zIndex: 5 }}>
+            <Tag color="#0ea5e9" style={{ margin: 0, background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)' }}>Entity Type</Tag>
+            <Tag style={{ margin: 0, background: 'rgba(148,163,184,0.08)', border: '1px solid rgba(148,163,184,0.15)', color: '#94a3b8' }}>Relationship</Tag>
+            <Tag style={{ margin: 0, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981' }}>Click for details</Tag>
           </div>
         </div>
       </Card>

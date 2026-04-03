@@ -1,3 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-deep: #0a0e17;
+  --bg-base: #0f1420;
+  --bg-surface: #161c2e;
+  --bg-elevated: #1c2438;
+  --border-subtle: rgba(148, 163, 184, 0.08);
+  --border-default: rgba(148, 163, 184, 0.12);
+  --border-bright: rgba(148, 163, 184, 0.2);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #0ea5e9;
+  --accent-hover: #38bdf8;
+  --accent-dim: rgba(14, 165, 233, 0.12);
+  --accent-glow: rgba(14, 165, 233, 0.25);
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--border-subtle);
+  --shadow-elevated: 0 4px 24px rgba(0,0,0,0.4), 0 0 0 1px var(--border-default);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -6,10 +32,349 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+}
+
+/* Ant Design Dark Theme Overrides */
+.ant-layout {
+  background: var(--bg-deep) !important;
+}
+
+.ant-layout-header {
+  background: var(--bg-base) !important;
+  border-bottom: 1px solid var(--border-default);
+  backdrop-filter: blur(12px);
+}
+
+.ant-tabs {
+  color: var(--text-secondary) !important;
+}
+
+.ant-tabs-tab {
+  color: var(--text-muted) !important;
+  transition: color 0.2s, background 0.2s !important;
+  border-radius: 6px !important;
+  padding: 8px 16px !important;
+  margin: 0 2px !important;
+}
+
+.ant-tabs-tab:hover {
+  color: var(--text-primary) !important;
+}
+
+.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--accent) !important;
+  font-weight: 500;
+}
+
+.ant-tabs-ink-bar {
+  background: var(--accent) !important;
+}
+
+.ant-card {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-card) !important;
+  color: var(--text-primary) !important;
+  transition: box-shadow 0.25s, border-color 0.25s !important;
+}
+
+.ant-card:hover {
+  border-color: var(--border-default) !important;
+}
+
+.ant-card-head {
+  border-bottom-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  padding: 12px 20px !important;
+  min-height: auto !important;
+}
+
+.ant-card-head-title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+
+.ant-card-body {
+  padding: 16px 20px !important;
+}
+
+.ant-table {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--bg-elevated) !important;
+  color: var(--text-muted) !important;
+  border-bottom: 1px solid var(--border-default) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-elevated) !important;
+}
+
+.ant-table-tbody > tr {
+  transition: background 0.15s !important;
+}
+
+.ant-btn {
+  border-radius: 6px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s !important;
+}
+
+.ant-btn-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 12px var(--accent-dim) !important;
+}
+
+.ant-btn-primary:hover {
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+  box-shadow: 0 0 20px var(--accent-glow) !important;
+}
+
+.ant-btn-default {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-secondary) !important;
+}
+
+.ant-btn-default:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-input-number {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+  border-radius: 6px !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-dim) !important;
+}
+
+.ant-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+.ant-select-dropdown {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+.ant-select-item {
+  color: var(--text-secondary) !important;
+}
+
+.ant-select-item-option-active {
+  background: var(--bg-elevated) !important;
+}
+
+.ant-select-item-option-selected {
+  background: var(--accent-dim) !important;
+  color: var(--accent) !important;
+}
+
+.ant-tag {
+  border-radius: 4px !important;
+  border: none !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+}
+
+.ant-modal-content {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+.ant-modal-header {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.ant-modal-title {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+
+.ant-modal-close {
+  color: var(--text-muted) !important;
+}
+
+.ant-modal-close:hover {
+  color: var(--text-primary) !important;
+}
+
+.ant-modal-footer {
+  border-top: 1px solid var(--border-subtle) !important;
+}
+
+.ant-form-item-label > label {
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+.ant-drawer-content {
+  background: var(--bg-surface) !important;
+}
+
+.ant-drawer-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+}
+
+.ant-drawer-title {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+
+.ant-drawer-body {
+  color: var(--text-secondary) !important;
+}
+
+.ant-descriptions-bordered .ant-descriptions-item-label {
+  background: var(--bg-elevated) !important;
+  color: var(--text-muted) !important;
+}
+
+.ant-descriptions-bordered .ant-descriptions-item-content {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.ant-descriptions-row > td {
+  border-color: var(--border-subtle) !important;
+}
+
+.ant-collapse {
+  background: transparent !important;
+  border-color: var(--border-subtle) !important;
+}
+
+.ant-collapse-item {
+  border-color: var(--border-subtle) !important;
+}
+
+.ant-collapse-header {
+  color: var(--text-secondary) !important;
+}
+
+.ant-collapse-content {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-secondary) !important;
+}
+
+.ant-tree {
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+}
+
+.ant-tree-node-content-wrapper:hover {
+  background: var(--bg-elevated) !important;
+}
+
+.ant-empty-description {
+  color: var(--text-muted) !important;
+}
+
+.ant-spin-text {
+  color: var(--text-muted) !important;
+}
+
+.ant-steps-item-title {
+  color: var(--text-secondary) !important;
+}
+
+.ant-steps-item-finish .ant-steps-item-title {
+  color: var(--text-primary) !important;
+}
+
+.ant-list-item {
+  border-color: var(--border-subtle) !important;
+}
+
+pre {
+  background: var(--bg-elevated) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
 }
