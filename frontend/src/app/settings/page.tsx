@@ -368,10 +368,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-104px)] overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-8">
-        <div className="space-y-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-6 pb-8">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[oklch(0.70_0.15_280)] to-[oklch(0.65_0.18_200)] shadow-sm">
                 <Settings2 className="h-5 w-5 text-white" />
@@ -396,31 +394,30 @@ export default function SettingsPage() {
                 </Badge>
               )}
             </div>
-          </div>
+      </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard title="当前模型" value={currentModelLabel} hint="用于自然语言转 SPARQL" icon={Bot} />
-            <StatCard title="服务提供商" value={currentProviderLabel} hint={config.llm_base_url || '等待配置 Base URL'} icon={Server} />
-            <StatCard title="提示词长度" value={`${systemPrompt.length} 字符`} hint={promptChanged ? '存在未保存修改' : '模板已同步'} icon={MessageSquareText} />
-            <StatCard title="快捷问题" value={`${questions.length} 条`} hint={questionsChanged ? '列表已变更' : '用于聊天界面快捷入口'} icon={Zap} />
-          </div>
-        </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="当前模型" value={currentModelLabel} hint="用于自然语言转 SPARQL" icon={Bot} />
+        <StatCard title="服务提供商" value={currentProviderLabel} hint={config.llm_base_url || '等待配置 Base URL'} icon={Server} />
+        <StatCard title="提示词长度" value={`${systemPrompt.length} 字符`} hint={promptChanged ? '存在未保存修改' : '模板已同步'} icon={MessageSquareText} />
+        <StatCard title="快捷问题" value={`${questions.length} 条`} hint={questionsChanged ? '列表已变更' : '用于聊天界面快捷入口'} icon={Zap} />
+      </div>
 
-        <Tabs defaultValue="model" className="w-full">
-          <TabsList className="mb-2 h-auto flex-wrap justify-start gap-2 rounded-xl border border-border/70 bg-card/60 p-1">
-            <TabsTrigger value="model" className="gap-2 rounded-lg px-4 py-2">
-              <Bot className="h-4 w-4" />
-              模型设置
-            </TabsTrigger>
-            <TabsTrigger value="prompt" className="gap-2 rounded-lg px-4 py-2">
-              <MessageSquareText className="h-4 w-4" />
-              提示词编辑
-            </TabsTrigger>
-            <TabsTrigger value="questions" className="gap-2 rounded-lg px-4 py-2">
-              <Zap className="h-4 w-4" />
-              快捷问题
-            </TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="model" className="w-full">
+        <TabsList className="mb-2 h-auto flex-wrap justify-start gap-2 rounded-xl border border-border/70 bg-card/60 p-1">
+          <TabsTrigger value="model" className="gap-2 rounded-lg px-4 py-2">
+            <Bot className="h-4 w-4" />
+            模型设置
+          </TabsTrigger>
+          <TabsTrigger value="prompt" className="gap-2 rounded-lg px-4 py-2">
+            <MessageSquareText className="h-4 w-4" />
+            提示词编辑
+          </TabsTrigger>
+          <TabsTrigger value="questions" className="gap-2 rounded-lg px-4 py-2">
+            <Zap className="h-4 w-4" />
+            快捷问题
+          </TabsTrigger>
+        </TabsList>
 
           <TabsContent value="model" className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
@@ -915,8 +912,7 @@ export default function SettingsPage() {
               </div>
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
+      </Tabs>
     </div>
   );
 }

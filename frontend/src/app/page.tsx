@@ -201,7 +201,7 @@ export default function HomePage() {
                     </Badge>
                   )}
                 </div>
-                <h1 className="text-3xl font-bold tracking-tight text-foreground">带说明的工作入口</h1>
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">你的本体工作台</h1>
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                   天织把数据源、Bootstrap、映射、SPARQL 和 AI 问答串成一条工作链路。
                   首页负责解释这条链路，并把你带到下一步最合适的页面。
