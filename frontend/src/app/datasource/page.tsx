@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -29,7 +28,6 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
-  ArrowRight,
   Database,
   Eye,
   Loader2,
@@ -652,93 +650,37 @@ export default function DataSourcePage() {
                         </Button>
                       </div>
 
-                      <div className="rounded-xl border border-border/70 bg-background/30 p-4">
-                        <p className="mb-2 text-sm font-medium text-foreground">最近反馈</p>
-                        <p className="text-sm text-muted-foreground">
-                          {activeSource.lastMessage ?? '还没有操作记录，建议先测试连接。'}
-                        </p>
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <Link href="/db-schema" className="rounded-xl border border-border/70 bg-background/30 p-4 transition-colors hover:bg-muted/40">
-                          <p className="font-medium text-foreground">进入数据库概览</p>
-                          <p className="mt-1 text-sm text-muted-foreground">查看主键、外键和建模风险。</p>
-                          <span className="mt-3 inline-flex items-center text-sm text-primary">
-                            打开
-                            <ArrowRight className="ml-1 h-4 w-4" />
-                          </span>
-                        </Link>
-                        <Link href="/mapping" className="rounded-xl border border-border/70 bg-background/30 p-4 transition-colors hover:bg-muted/40">
-                          <p className="font-medium text-foreground">进入映射编辑</p>
-                          <p className="mt-1 text-sm text-muted-foreground">在 Bootstrap 基础上继续加工 OBDA。</p>
-                          <span className="mt-3 inline-flex items-center text-sm text-primary">
-                            打开
-                            <ArrowRight className="ml-1 h-4 w-4" />
-                          </span>
-                        </Link>
-                      </div>
                     </CardContent>
                   </Card>
 
-                  <div className="space-y-6">
-                    <Card className="border-border/80 bg-card/70">
-                      <CardHeader className="gap-2">
-                        <CardTitle className="text-base">连接详情</CardTitle>
-                        <CardDescription>重点展示当前工作连接的关键信息，而不是平铺所有字段。</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3 text-sm">
-                        <div className="grid grid-cols-[88px_1fr] gap-y-3">
-                          <span className="text-muted-foreground">名称</span>
-                          <span className="font-medium text-foreground">{activeSource.name}</span>
-                          <span className="text-muted-foreground">JDBC URL</span>
-                          <code className="break-all text-xs text-foreground">{activeSource.jdbcUrl}</code>
-                          <span className="text-muted-foreground">用户</span>
-                          <span className="text-foreground">{activeSource.username}</span>
-                          <span className="text-muted-foreground">驱动</span>
-                          <span className="text-foreground">{activeSource.driver}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-border/80 bg-card/70">
-                      <CardHeader className="gap-2">
-                        <CardTitle className="text-base">Bootstrap 产物</CardTitle>
-                        <CardDescription>生成成功后，把下一步入口和输出路径直接挂出来。</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3 text-sm">
-                        {activeSource.bootstrapPaths ? (
-                          <>
-                            <div className="rounded-lg border border-border/70 bg-background/30 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Ontology</p>
-                              <code className="mt-2 block break-all text-xs text-foreground">{activeSource.bootstrapPaths.ontologyPath}</code>
-                            </div>
-                            <div className="rounded-lg border border-border/70 bg-background/30 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Mapping</p>
-                              <code className="mt-2 block break-all text-xs text-foreground">{activeSource.bootstrapPaths.mappingPath}</code>
-                            </div>
-                            <div className="rounded-lg border border-border/70 bg-background/30 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Properties</p>
-                              <code className="mt-2 block break-all text-xs text-foreground">{activeSource.bootstrapPaths.propertiesPath}</code>
-                            </div>
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <Link href="/ontology" className="rounded-lg border border-border/70 bg-background/30 p-3 transition-colors hover:bg-muted/40">
-                                <p className="font-medium text-foreground">查看本体</p>
-                                <p className="mt-1 text-xs text-muted-foreground">确认类与关系是否符合预期。</p>
-                              </Link>
-                              <Link href="/sparql" className="rounded-lg border border-border/70 bg-background/30 p-3 transition-colors hover:bg-muted/40">
-                                <p className="font-medium text-foreground">执行查询</p>
-                                <p className="mt-1 text-xs text-muted-foreground">验证语义层是否已可用。</p>
-                              </Link>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
-                            尚未生成 Bootstrap 产物
+                  <Card className="border-border/80 bg-card/70">
+                    <CardHeader className="gap-2">
+                      <CardTitle className="text-base">Bootstrap 产物</CardTitle>
+                      <CardDescription>生成成功后展示输出路径。</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      {activeSource.bootstrapPaths ? (
+                        <>
+                          <div className="rounded-lg border border-border/70 bg-background/30 p-3">
+                            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Ontology</p>
+                            <code className="mt-2 block break-all text-xs text-foreground">{activeSource.bootstrapPaths.ontologyPath}</code>
                           </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
+                          <div className="rounded-lg border border-border/70 bg-background/30 p-3">
+                            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Mapping</p>
+                            <code className="mt-2 block break-all text-xs text-foreground">{activeSource.bootstrapPaths.mappingPath}</code>
+                          </div>
+                          <div className="rounded-lg border border-border/70 bg-background/30 p-3">
+                            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Properties</p>
+                            <code className="mt-2 block break-all text-xs text-foreground">{activeSource.bootstrapPaths.propertiesPath}</code>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                          尚未生成 Bootstrap 产物
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
                 </div>
               </>
             )}

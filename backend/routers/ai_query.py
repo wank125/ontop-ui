@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from models.mapping import MappingContent
 from services.llm_service import generate_sparql, generate_answer, build_sparql_prompt
 from services.obda_parser import parse_obda
-from config import ONTOP_ENDPOINT_URL, MAPPING_FILE, ONTOLOGY_FILE, AI_CONFIG_FILE
+from config import ONTOP_ENDPOINT_URL, MAPPING_FILE, ONTOLOGY_FILE
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -115,27 +115,21 @@ DEFAULT_QUICK_QUESTIONS = [
 
 
 def _load_ai_config() -> dict:
-    """Load AI config from file, merging with defaults."""
+    """Load AI config from SQLite, merging with defaults."""
+    from repositories.ai_config_repo import load_config
     config = dict(DEFAULT_CONFIG)
-    if AI_CONFIG_FILE.exists():
-        try:
-            saved = json.loads(AI_CONFIG_FILE.read_text(encoding="utf-8"))
-            config.update(saved)
-        except Exception:
-            pass
+    try:
+        saved = load_config()
+        config.update(saved)
+    except Exception:
+        pass
     return config
 
 
 def _save_ai_config(config: dict):
-    """Save AI config to file."""
-    AI_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    # Don't save defaults that haven't changed
-    to_save = {}
-    for k, v in config.items():
-        if k == "llm_api_key" and v == DEFAULT_CONFIG.get("llm_api_key"):
-            continue
-        to_save[k] = v
-    AI_CONFIG_FILE.write_text(json.dumps(to_save, indent=2, ensure_ascii=False), encoding="utf-8")
+    """Save AI config to SQLite."""
+    from repositories.ai_config_repo import save_config
+    save_config(config)
 
 
 # ── Config API ─────────────────────────────────────────

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -12,16 +11,9 @@ import {
   GitGraph,
   Settings,
   Zap,
-  Server,
-  CircleCheck,
-  CircleX,
-  ChevronUp,
-  ChevronDown,
-  Activity,
-  Clock,
+  Cog,
   Table,
 } from 'lucide-react';
-import { sparql, mappings } from '@/lib/api';
 
 const navItems = [
   { title: '数据源管理', href: '/datasource', icon: Database, description: '管理数据库连接' },
@@ -33,78 +25,8 @@ const navItems = [
   { title: 'AI 设置', href: '/settings', icon: Settings, description: '模型与提示词配置' },
 ];
 
-interface EndpointStatus {
-  status: 'running' | 'stopped' | 'error';
-  port: number;
-}
-
 export function SidebarNav() {
   const pathname = usePathname();
-  const [showEndpointDetails, setShowEndpointDetails] = useState(false);
-  const [endpointStatus, setEndpointStatus] = useState<EndpointStatus>({
-    status: 'stopped',
-    port: 8080,
-  });
-  const [restarting, setRestarting] = useState(false);
-
-  const checkStatus = async () => {
-    try {
-      const { running, port } = await sparql.endpointStatus();
-      setEndpointStatus({ status: running ? 'running' : 'stopped', port });
-    } catch {
-      setEndpointStatus({ status: 'error', port: 8080 });
-    }
-  };
-
-  useEffect(() => {
-    checkStatus();
-    const interval = setInterval(checkStatus, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleRestart = async () => {
-    setRestarting(true);
-    try {
-      await mappings.restartEndpoint();
-      await checkStatus();
-    } catch { /* ignore */ }
-    setRestarting(false);
-  };
-
-  const getStatusConfig = () => {
-    switch (endpointStatus.status) {
-      case 'running':
-        return {
-          icon: CircleCheck,
-          color: 'text-emerald-500',
-          bg: 'bg-emerald-500/10',
-          pulse: 'bg-emerald-500',
-          label: '运行中',
-          gradient: 'from-emerald-500 to-teal-500',
-        };
-      case 'stopped':
-        return {
-          icon: CircleX,
-          color: 'text-amber-500',
-          bg: 'bg-amber-500/10',
-          pulse: 'bg-amber-500',
-          label: '已停止',
-          gradient: 'from-amber-500 to-orange-500',
-        };
-      case 'error':
-        return {
-          icon: CircleX,
-          color: 'text-red-500',
-          bg: 'bg-red-500/10',
-          pulse: 'bg-red-500',
-          label: '异常',
-          gradient: 'from-red-500 to-rose-500',
-        };
-    }
-  };
-
-  const statusConfig = getStatusConfig();
-  const StatusIcon = statusConfig.icon;
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)]">
@@ -161,96 +83,19 @@ export function SidebarNav() {
         </div>
       </nav>
 
-      {/* 底部状态栏 */}
-      <div className="border-t border-[var(--sidebar-border)]">
-        <button
-          className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-[var(--sidebar-accent)]"
-          onClick={() => setShowEndpointDetails(!showEndpointDetails)}
-        >
-          <div className="relative">
-            <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', statusConfig.bg)}>
-              <Server className={cn('h-5 w-5', statusConfig.color)} />
-            </div>
-            {endpointStatus.status === 'running' && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3">
-                <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping', statusConfig.pulse)} />
-                <span className={cn('relative inline-flex rounded-full h-3 w-3', statusConfig.pulse)} />
-              </span>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-[var(--sidebar-foreground)]">语义端点</p>
-              {showEndpointDetails ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className={cn('inline-block h-1.5 w-1.5 rounded-full', statusConfig.pulse)} />
-              <p className={cn('text-xs', statusConfig.color)}>{statusConfig.label}</p>
-              <span className="text-xs text-muted-foreground">:{endpointStatus.port}</span>
-            </div>
-          </div>
-        </button>
-
-        {showEndpointDetails && (
-          <div className="border-t border-[var(--sidebar-border)] bg-[var(--sidebar-accent)]/50 px-4 py-3">
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                <div>
-                  <p className="text-muted-foreground">状态</p>
-                  <p className="font-medium text-foreground">{statusConfig.label}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                <div>
-                  <p className="text-muted-foreground">端口</p>
-                  <p className="font-medium text-foreground">{endpointStatus.port}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <button
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-                  restarting ? 'opacity-50' : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'
-                )}
-                onClick={handleRestart}
-                disabled={restarting}
-              >
-                <CircleCheck className="h-3 w-3" />
-                {restarting ? '重启中...' : '重启'}
-              </button>
-              <button
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors bg-muted text-muted-foreground hover:bg-muted/80"
-                onClick={checkStatus}
-              >
-                <Activity className="h-3 w-3" />
-                检测
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 设置按钮 */}
+      {/* 系统设置按钮 */}
       <div className="border-t border-[var(--sidebar-border)] p-3">
         <Link
-          href="/settings"
+          href="/system"
           className={cn(
             'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-            pathname === '/settings'
+            pathname === '/system'
               ? 'bg-[var(--sidebar-accent)] text-[var(--sidebar-foreground)]'
               : 'text-[var(--muted-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-foreground)]'
           )}
         >
-          <Settings className="h-4 w-4" />
-          <span>设置</span>
+          <Cog className="h-4 w-4" />
+          <span>系统设置</span>
         </Link>
       </div>
     </aside>

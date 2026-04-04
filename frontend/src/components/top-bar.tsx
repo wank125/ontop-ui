@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -18,25 +19,77 @@ import {
   Settings,
   User,
   HelpCircle,
-  Moon,
-  Sun,
+  Server,
+  Activity,
+  CircleCheck,
+  Loader2,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { sparql, mappings } from '@/lib/api';
 
-interface User {
+interface UserInfo {
   name: string;
   email: string;
   avatar?: string;
   role: string;
 }
 
-const mockUser: User = {
+const mockUser: UserInfo = {
   name: '张三',
   email: 'zhangsan@example.com',
   role: '管理员',
 };
 
+interface EndpointStatus {
+  status: 'running' | 'stopped' | 'error';
+  port: number;
+}
+
 export function TopBar() {
-  const [user] = useState<User>(mockUser);
+  const [user] = useState<UserInfo>(mockUser);
+  const [endpointStatus, setEndpointStatus] = useState<EndpointStatus>({
+    status: 'stopped',
+    port: 8080,
+  });
+  const [restarting, setRestarting] = useState(false);
+
+  const checkStatus = async () => {
+    try {
+      const { running, port } = await sparql.endpointStatus();
+      setEndpointStatus({ status: running ? 'running' : 'stopped', port });
+    } catch {
+      setEndpointStatus({ status: 'error', port: 8080 });
+    }
+  };
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleRestart = async () => {
+    setRestarting(true);
+    try {
+      await mappings.restartEndpoint();
+      await checkStatus();
+    } catch { /* ignore */ }
+    setRestarting(false);
+  };
+
+  const statusColor =
+    endpointStatus.status === 'running'
+      ? 'text-emerald-500'
+      : endpointStatus.status === 'error'
+        ? 'text-red-500'
+        : 'text-amber-500';
+
+  const statusLabel =
+    endpointStatus.status === 'running'
+      ? '运行中'
+      : endpointStatus.status === 'error'
+        ? '异常'
+        : '已停止';
 
   const getInitials = (name: string) => {
     return name
@@ -49,8 +102,75 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-end border-b border-border bg-background/80 px-6 backdrop-blur-sm">
-      {/* 右侧操作区 */}
       <div className="flex items-center gap-2">
+        {/* 端点状态 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="relative h-9 gap-2 px-2">
+              <div className="relative">
+                <Server className={cn('h-4 w-4', statusColor)} />
+                {endpointStatus.status === 'running' && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                )}
+              </div>
+              <span className={cn('hidden text-xs sm:inline', statusColor)}>
+                :{endpointStatus.port}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex items-center gap-2">
+                <Server className={cn('h-4 w-4', statusColor)} />
+                <span className="text-sm font-medium">语义端点</span>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1.5 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">状态</span>
+                <span className={cn('font-medium', statusColor)}>{statusLabel}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">端口</span>
+                <span className="font-medium">{endpointStatus.port}</span>
+              </div>
+            </div>
+            <DropdownMenuSeparator />
+            <div className="flex gap-2 p-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 gap-1.5 text-xs h-8"
+                onClick={handleRestart}
+                disabled={restarting}
+              >
+                {restarting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CircleCheck className="h-3 w-3" />
+                )}
+                {restarting ? '重启中...' : '重启'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 gap-1.5 text-xs h-8"
+                onClick={checkStatus}
+              >
+                <Activity className="h-3 w-3" />
+                检测
+              </Button>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* 分隔线 */}
+        <div className="mx-1 h-6 w-px bg-border" />
+
         {/* 通知按钮 */}
         <Button variant="ghost" size="icon" className="relative h-9 w-9">
           <Bell className="h-4 w-4" />
@@ -92,13 +212,17 @@ export function TopBar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
-              个人资料
+            <DropdownMenuItem asChild>
+              <Link href="/system">
+                <User className="mr-2 h-4 w-4" />
+                个人资料
+              </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
-              账户设置
+            <DropdownMenuItem asChild>
+              <Link href="/system">
+                <Settings className="mr-2 h-4 w-4" />
+                系统设置
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-red-500 focus:text-red-500">
