@@ -1,22 +1,7 @@
 const API_BASE = '/api/v1';
-const API_DIRECT = 'http://localhost:8000/api/v1';
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
-  if (res.status === 204) return undefined as T;
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
-  }
-  return res.json();
-}
-
-// For paths containing non-ASCII characters that get mangled by Next.js rewrite
-async function apiDirect<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_DIRECT}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });
@@ -96,14 +81,14 @@ export const datasources = {
 export const mappings = {
   listFiles: () => api<MappingFile[]>('/mappings'),
   getContent: (path: string) =>
-    apiDirect<MappingContent>(`/mappings/${path}/content`),
+    api<MappingContent>(`/mappings/content?path=${encodeURIComponent(path)}`),
   saveContent: (path: string, content: MappingContent) =>
-    apiDirect<{ success: boolean }>(`/mappings/${path}/content`, {
+    api<{ success: boolean }>(`/mappings/content?path=${encodeURIComponent(path)}`, {
       method: 'PUT',
       body: JSON.stringify(content),
     }),
   validate: (path: string, data?: { ontology_path?: string; properties_path?: string }) =>
-    apiDirect<{ valid: boolean; errors: string[] }>(`/mappings/${path}/validate`, {
+    api<{ valid: boolean; errors: string[] }>(`/mappings/validate?path=${encodeURIComponent(path)}`, {
       method: 'POST',
       body: JSON.stringify(data || {}),
     }),
