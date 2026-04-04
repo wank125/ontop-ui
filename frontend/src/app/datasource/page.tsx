@@ -92,6 +92,7 @@ export default function DataSourcePage() {
     driver: 'postgresql',
   });
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSources();
@@ -165,6 +166,14 @@ export default function DataSourcePage() {
     } catch (err: any) {
       alert(`Bootstrap 失败: ${err.message}`);
     }
+  };
+
+  const handleViewDetail = (id: string) => {
+    setDetailId(id);
+  };
+
+  const closeDetail = () => {
+    setDetailId(null);
   };
 
   return (
@@ -348,7 +357,7 @@ export default function DataSourcePage() {
                             )}
                             测试连接
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleViewDetail(ds.id)}>
                             <Eye className="mr-2 h-4 w-4" />
                             查看详情
                           </DropdownMenuItem>
@@ -379,6 +388,47 @@ export default function DataSourcePage() {
         <span>共 {dataSources.length} 个数据源</span>
         <span>已连接: {dataSources.filter((ds) => ds.status === 'connected').length}</span>
       </div>
+
+      {/* 连接信息弹窗 */}
+      <Dialog open={detailId !== null} onOpenChange={(open) => !open && closeDetail()}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              连接详情
+            </DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const ds = dataSources.find((d) => d.id === detailId);
+            if (!ds) return null;
+            return (
+              <div className="space-y-3 py-2">
+                <div className="grid grid-cols-[80px_1fr] gap-y-3 text-sm">
+                  <span className="text-muted-foreground">名称</span>
+                  <span className="font-medium">{ds.name}</span>
+                  <span className="text-muted-foreground">JDBC URL</span>
+                  <code className="text-xs break-all">{ds.jdbcUrl}</code>
+                  <span className="text-muted-foreground">用户</span>
+                  <span>{ds.username}</span>
+                  <span className="text-muted-foreground">驱动</span>
+                  <code className="text-xs">{ds.driver}</code>
+                  <span className="text-muted-foreground">状态</span>
+                  <Badge
+                    variant={ds.status === 'connected' ? 'default' : ds.status === 'error' ? 'destructive' : 'secondary'}
+                    className={
+                      ds.status === 'connected'
+                        ? 'bg-emerald-500/10 text-emerald-500 w-fit'
+                        : 'w-fit'
+                    }
+                  >
+                    {ds.status === 'connected' ? '已连接' : ds.status === 'error' ? '连接失败' : '未检测'}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

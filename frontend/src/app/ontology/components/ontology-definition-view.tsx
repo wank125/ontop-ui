@@ -41,7 +41,7 @@ export function OntologyDefinitionView({ ttlPath }: { ttlPath: string }) {
   const { classes, object_properties, data_properties, shacl_constraints } = data;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div className="flex-1 overflow-y-auto p-4 h-full">
       {/* Stats bar */}
       <div className="mb-4 flex gap-3 text-xs text-muted-foreground">
         <span>{classes.length} 个类</span>

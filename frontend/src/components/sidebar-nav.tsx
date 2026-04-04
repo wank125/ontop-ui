@@ -19,11 +19,13 @@ import {
   ChevronDown,
   Activity,
   Clock,
+  Table,
 } from 'lucide-react';
 import { sparql, mappings } from '@/lib/api';
 
 const navItems = [
   { title: '数据源管理', href: '/datasource', icon: Database, description: '管理数据库连接' },
+  { title: '数据库概览', href: '/db-schema', icon: Table, description: '浏览表结构' },
   { title: 'SPARQL 查询', href: '/sparql', icon: Code2, description: '执行语义查询' },
   { title: '映射编辑', href: '/mapping', icon: FileCode, description: '编辑 OBDA 映射' },
   { title: 'AI 助手', href: '/ai-assistant', icon: Bot, description: '自然语言查询' },

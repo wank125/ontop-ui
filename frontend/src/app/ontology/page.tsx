@@ -537,7 +537,7 @@ export default function OntologyPage() {
         </TabsContent>
 
         {/* Ontology Definition Tab */}
-        <TabsContent value="ontology" className="flex-1 overflow-hidden mt-0">
+        <TabsContent value="ontology" className="flex-1 overflow-y-auto mt-0">
           {selectedTtlPath ? (
             <OntologyDefinitionView ttlPath={selectedTtlPath} />
           ) : (

@@ -8,7 +8,7 @@ from models.mapping import MappingContent, ValidateRequest, RestartEndpointReque
 from services.obda_parser import parse_obda, serialize_obda
 from services.ontop_cli import validate as ontop_validate
 from services.ontop_endpoint import start_endpoint, stop_endpoint
-from config import ONTOP_OUTPUT, ONTOLOGY_FILE, MAPPING_FILE, PROPERTIES_FILE
+from config import ONTOP_OUTPUT, ONTOLOGY_FILE, MAPPING_FILE, PROPERTIES_FILE, ONTOP_ENDPOINT_PORT
 
 router = APIRouter(prefix="/mappings", tags=["mappings"])
 
@@ -140,7 +140,7 @@ async def restart_endpoint(req: RestartEndpointRequest):
         ontology_path=req.ontology_path,
         mapping_path=req.mapping_path,
         properties_path=req.properties_path,
-        port=req.port,
+        port=req.port if req.port != 8080 else ONTOP_ENDPOINT_PORT,
     )
     if not success:
         raise HTTPException(500, f"Failed to start endpoint: {msg[:500]}")
