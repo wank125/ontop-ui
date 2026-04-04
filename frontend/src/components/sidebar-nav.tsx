@@ -30,6 +30,7 @@ const navItems = [
   { title: '映射编辑', href: '/mapping', icon: FileCode, description: '编辑 OBDA 映射' },
   { title: 'AI 助手', href: '/ai-assistant', icon: Bot, description: '自然语言查询' },
   { title: '本体可视化', href: '/ontology', icon: GitGraph, description: '可视化数据模型' },
+  { title: 'AI 设置', href: '/settings', icon: Settings, description: '模型与提示词配置' },
 ];
 
 interface EndpointStatus {
@@ -236,10 +237,18 @@ export function SidebarNav() {
 
       {/* 设置按钮 */}
       <div className="border-t border-[var(--sidebar-border)] p-3">
-        <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-foreground)]">
+        <Link
+          href="/settings"
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+            pathname === '/settings'
+              ? 'bg-[var(--sidebar-accent)] text-[var(--sidebar-foreground)]'
+              : 'text-[var(--muted-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-foreground)]'
+          )}
+        >
           <Settings className="h-4 w-4" />
           <span>设置</span>
-        </button>
+        </Link>
       </div>
     </aside>
   );

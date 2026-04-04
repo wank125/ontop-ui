@@ -6,51 +6,287 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
+from pydantic import BaseModel
 
 from models.mapping import MappingContent
 from services.llm_service import generate_sparql, generate_answer, build_sparql_prompt
 from services.obda_parser import parse_obda
-from config import ONTOP_ENDPOINT_URL, MAPPING_FILE, ONTOLOGY_FILE
+from config import ONTOP_ENDPOINT_URL, MAPPING_FILE, ONTOLOGY_FILE, AI_CONFIG_FILE
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 logger = logging.getLogger(__name__)
 
+# ── Provider presets ──────────────────────────────
+PROVIDER_PRESETS = {
+    "openai": {
+        "label": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+    },
+    "lm_studio": {
+        "label": "LM Studio",
+        "base_url": "http://localhost:1234/v1",
+        "models": [],
+    },
+    "ollama": {
+        "label": "Ollama",
+        "base_url": "http://localhost:11434/v1",
+        "models": [],
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "base_url": "https://api.deepseek.com/v1",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+    },
+    "zhipu": {
+        "label": "智谱 AI",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "models": ["glm-4-flash", "glm-4-plus", "glm-4-long"],
+    },
+    "azure_openai": {
+        "label": "Azure OpenAI",
+        "base_url": "https://{resource}.openai.azure.com/openai/deployments/{deployment}",
+        "models": [],
+    },
+    "anthropic": {
+        "label": "Anthropic Claude",
+        "base_url": "https://api.anthropic.com",
+        "models": ["claude-sonnet-4-20250514", "claude-haiku-4-20250514", "claude-3.5-sonnet-20241022"],
+    },
+    "custom": {
+        "label": "自定义 (OpenAI 兼容)",
+        "base_url": "",
+        "models": [],
+    },
+}
+
+# ── Default config values ──────────────────────────────
+DEFAULT_CONFIG = {
+    "llm_provider": "lm_studio",
+    "llm_base_url": "http://localhost:1234/v1",
+    "llm_api_key": "lm-studio",
+    "llm_model": "zai-org/glm-4.7-flash",
+    "llm_temperature": 0.1,
+    "max_tokens": 1024,
+}
+
+DEFAULT_SYSTEM_PROMPT = """你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。
+
+本体结构:
+- 类: {classes}
+- 数据属性: {properties}
+- 对象属性(关系): {relationships}
+
+声明的 Prefix:
+{prefixes}
+
+重要：必须使用上面声明的 Prefix 中的 cls: 前缀来构建 URI。
+类 URI 用 cls:<ClassName>，属性 URI 也用 cls:<propertyName>。
+不要编造其他命名空间。
+
+规则:
+1. 只返回一条 SPARQL 查询，不要解释
+2. URI 模板使用尖括号，变量使用问号前缀
+3. 使用 PREFIX 声明命名空间
+4. 中文值直接用引号匹配
+5. 属性使用完整 URI（用 cls: 前缀 + 类名 + 属性名的模式）
+6. 类的 URI 格式: cls:<ClassName>，属性的 URI 格式: cls:<propertyName>
+
+示例:
+- 查询所有类型为 X 的实例及其属性:
+  SELECT ?s ?val WHERE {{
+    ?s a cls:X ; cls:attr1 ?val .
+  }}
+
+- 查询有关系的两个实例:
+  SELECT ?a ?b WHERE {{
+    ?a a cls:A ; cls:ref_b_id ?b .
+    ?b a cls:B .
+  }}"""
+
+DEFAULT_QUICK_QUESTIONS = [
+    {"id": "1", "question": "有哪些物业项目？"},
+    {"id": "2", "question": "望京花园有多少空间单元？"},
+    {"id": "3", "question": "哪些账单是待缴状态？"},
+    {"id": "4", "question": "每个项目的客户数量？"},
+    {"id": "5", "question": "最近有哪些工单？"},
+]
+
+
+def _load_ai_config() -> dict:
+    """Load AI config from file, merging with defaults."""
+    config = dict(DEFAULT_CONFIG)
+    if AI_CONFIG_FILE.exists():
+        try:
+            saved = json.loads(AI_CONFIG_FILE.read_text(encoding="utf-8"))
+            config.update(saved)
+        except Exception:
+            pass
+    return config
+
+
+def _save_ai_config(config: dict):
+    """Save AI config to file."""
+    AI_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    # Don't save defaults that haven't changed
+    to_save = {}
+    for k, v in config.items():
+        if k == "llm_api_key" and v == DEFAULT_CONFIG.get("llm_api_key"):
+            continue
+        to_save[k] = v
+    AI_CONFIG_FILE.write_text(json.dumps(to_save, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+# ── Config API ─────────────────────────────────────────
+
+
+class AIConfigUpdate(BaseModel):
+    llm_provider: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_api_key: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+
+@router.get("/providers")
+async def list_providers():
+    """List available LLM providers with presets."""
+    return {k: {"label": v["label"], "base_url": v["base_url"], "models": v["models"]} for k, v in PROVIDER_PRESETS.items()}
+
+
+class SystemPromptUpdate(BaseModel):
+    system_prompt: str
+
+
+class QuickQuestionsUpdate(BaseModel):
+    questions: list[dict]
+
+
+@router.get("/config")
+async def get_ai_config():
+    """Get current AI configuration (API key masked)."""
+    config = _load_ai_config()
+    # Mask API key
+    api_key = config.get("llm_api_key", "")
+    if api_key and len(api_key) > 4:
+        config["llm_api_key"] = api_key[:2] + "*" * (len(api_key) - 4) + api_key[-2:]
+    return config
+
+
+@router.put("/config")
+async def update_ai_config(data: AIConfigUpdate):
+    """Update AI configuration."""
+    config = _load_ai_config()
+    updates = data.model_dump(exclude_none=True)
+    config.update(updates)
+    _save_ai_config(config)
+
+    # Reload LLM client
+    from services.llm_service import reload_client
+    reload_client(
+        base_url=config["llm_base_url"],
+        api_key=config.get("llm_api_key", ""),
+        model=config["llm_model"],
+        temperature=config.get("llm_temperature", 0.1),
+        max_tokens=config.get("max_tokens", 1024),
+    )
+    return {"success": True, "message": "Configuration updated"}
+
+
+@router.get("/system-prompt")
+async def get_system_prompt():
+    """Get current system prompt template."""
+    config = _load_ai_config()
+    return {"system_prompt": config.get("system_prompt", DEFAULT_SYSTEM_PROMPT)}
+
+
+@router.put("/system-prompt")
+async def update_system_prompt(data: SystemPromptUpdate):
+    """Update system prompt template."""
+    config = _load_ai_config()
+    config["system_prompt"] = data.system_prompt
+    _save_ai_config(config)
+    return {"success": True, "message": "System prompt updated"}
+
+
+@router.get("/quick-questions")
+async def get_quick_questions():
+    """Get quick questions list."""
+    config = _load_ai_config()
+    return {"questions": config.get("quick_questions", DEFAULT_QUICK_QUESTIONS)}
+
+
+@router.put("/quick-questions")
+async def update_quick_questions(data: QuickQuestionsUpdate):
+    """Update quick questions list."""
+    config = _load_ai_config()
+    config["quick_questions"] = data.questions
+    _save_ai_config(config)
+    return {"success": True, "message": "Quick questions updated"}
+
+
+# ── Ontology Summary ──────────────────────────────────
+
 
 @router.get("/ontology-summary")
 async def ontology_summary():
     """Get ontology schema summary for prompt context."""
-    # Read mapping file for classes, properties, relationships
+    import re as re_mod
+
     mapping_content = MAPPING_FILE.read_text(encoding="utf-8")
     parsed = parse_obda(mapping_content)
 
     classes = set()
     data_properties = set()
     object_properties = set()
+    all_uris: set[str] = set()
 
     for m in parsed.mappings:
         target = m.target
-        # Extract class URIs from "a <class_uri>"
-        import re
-        class_matches = re.findall(r'a\s+<([^>]+)>', target)
+        class_matches = re_mod.findall(r'a\s+<([^>]+)>', target)
         for c in class_matches:
             classes.add(c.split("/")[-1])
+            all_uris.add(c)
 
-        # Extract property URIs
-        prop_matches = re.findall(r'<([^>]+#[^>]+)>', target)
+        # Extract property URIs: match <uri> {column}
+        prop_matches = re_mod.findall(r'<([^>]+)>\s*\{[^}]+\}', target)
         for p in prop_matches:
-            prop_name = p.split("#")[-1]
-            if prop_name.startswith("ref-"):
-                object_properties.add(prop_name)
+            if p.startswith("http://www.w3.org/") or p.startswith("https://www.w3.org/"):
+                continue
+            all_uris.add(p)
+            local_name = p.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+            if local_name.startswith("ref-"):
+                object_properties.add(local_name)
             else:
-                data_properties.add(prop_name)
+                data_properties.add(local_name)
+
+    # Auto-detect ontology namespace
+    namespaces: dict[str, str] = dict(parsed.prefixes)
+    for uri in all_uris:
+        base = uri.rsplit("/", 1)[0] + "/"
+        if base.startswith("http://ontology.") or base.startswith("http://example.com/ontology"):
+            if "cls" not in namespaces:
+                namespaces["cls"] = base
+            break
+
+    if "cls" not in namespaces and classes:
+        for uri in all_uris:
+            if uri.endswith(next(iter(classes))):
+                base = uri.rsplit("/", 1)[0] + "/"
+                namespaces["cls"] = base
+                break
 
     return {
         "classes": sorted(classes),
         "data_properties": sorted(data_properties),
         "object_properties": sorted(object_properties),
-        "prefixes": parsed.prefixes,
+        "prefixes": namespaces,
     }
+
+
+# ── AI Query Pipeline ──────────────────────────────────
 
 
 @router.get("/query")
@@ -59,32 +295,41 @@ async def ai_query(question: str):
     import asyncio
 
     async def event_generator():
-        # Step 1: Get ontology summary
         summary = await ontology_summary()
         yield {"event": "step", "data": json.dumps({"step": "analyzing", "message": "Analyzing ontology..."})}
 
-        # Step 2: Build prompt and generate SPARQL
+        # Use custom system prompt if configured
+        config = _load_ai_config()
+        custom_prompt = config.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
+
         prompt = build_sparql_prompt(
             classes=summary["classes"],
             properties=summary["data_properties"],
             relationships=summary["object_properties"],
             prefixes=summary["prefixes"],
+            template=custom_prompt,
         )
 
         sparql = await generate_sparql(prompt, question)
-        # Clean up SPARQL (remove markdown fences if present)
         sparql = sparql.strip()
         if sparql.startswith("```"):
             sparql = "\n".join(sparql.split("\n")[1:-1])
+
+        # Auto-inject PREFIX declarations if missing
+        prefix_lines = []
+        for prefix, uri in summary["prefixes"].items():
+            if f"PREFIX {prefix}:" not in sparql:
+                prefix_lines.append(f"PREFIX {prefix}: <{uri}>")
+        if prefix_lines:
+            sparql = "\n".join(prefix_lines) + "\n" + sparql
+
         yield {"event": "sparql", "data": json.dumps({"step": "sparql_generated", "sparql": sparql})}
 
-        # Step 3: Execute SPARQL
         yield {"event": "step", "data": json.dumps({"step": "executing", "message": "Executing query..."})}
 
         sql = ""
         result_text = ""
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Get SQL
             try:
                 resp = await client.get(
                     f"{ONTOP_ENDPOINT_URL}/ontop/reformulate",
@@ -95,7 +340,6 @@ async def ai_query(question: str):
             except Exception:
                 pass
 
-            # Execute query
             try:
                 resp = await client.post(
                     f"{ONTOP_ENDPOINT_URL}/sparql",
@@ -114,7 +358,6 @@ async def ai_query(question: str):
 
         yield {"event": "executed", "data": json.dumps({"step": "executed", "sql": sql, "results": result_text[:2000]})}
 
-        # Step 4: Generate natural language answer
         answer = await generate_answer(question, result_text[:2000])
         yield {"event": "answer", "data": json.dumps({"step": "answer", "answer": answer})}
 

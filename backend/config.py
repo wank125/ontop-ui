@@ -6,6 +6,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
+AI_CONFIG_FILE = DATA_DIR / "ai_config.json"
+
 # Ontop paths — support env override for Docker
 ONTOP_BASE = Path(os.environ.get("ONTOP_BASE", str(PROJECT_ROOT.parent.parent / "ontop-test")))
 ONTOP_CLI = Path(os.environ.get("ONTOP_CLI", str(ONTOP_BASE / "ontop-cli" / "ontop")))

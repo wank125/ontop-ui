@@ -1,6 +1,6 @@
 """LLM service for natural language to SPARQL translation."""
 import logging
-from typing import AsyncGenerator
+from typing import Optional
 
 from openai import AsyncOpenAI
 
@@ -8,44 +8,13 @@ from config import LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+# Mutable module-level state
+_client: AsyncOpenAI = AsyncOpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+_model: str = LLM_MODEL
+_temperature: float = 0.1
+_max_tokens: int = 1024
 
-SPARQL_SYSTEM_PROMPT = """你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。
-
-本体结构:
-- 类: {classes}
-- 数据属性: {properties}
-- 对象属性(关系): {relationships}
-
-Prefix:
-{prefixes}
-
-规则:
-1. 只返回一条 SPARQL 查询，不要解释
-2. URI 模板使用尖括号，变量使用问号前缀
-3. 使用 PREFIX 声明命名空间
-4. 中文值直接用引号匹配
-
-示例:
-- 查询所有门店:
-  PREFIX cls: <http://example.com/retail/>
-  PREFIX p: <http://example.com/retail/dim_store#>
-  SELECT ?store ?name ?region WHERE {{
-    ?store a cls:dim_store ; p:name ?name ; p:region ?region .
-  }}
-
-- 查询某门店的员工:
-  PREFIX cls: <http://example.com/retail/>
-  PREFIX sp: <http://example.com/retail/dim_store#>
-  PREFIX ep: <http://example.com/retail/dim_employee#>
-  SELECT ?emp ?name ?role WHERE {{
-    ?store a cls:dim_store ; sp:name "华东旗舰店" .
-    ?emp a cls:dim_employee ; ep:name ?name ; ep:role ?role .
-    ?emp <http://example.com/retail/dim_employee#ref-store_id> ?store .
-  }}
-"""
-
-ANSWER_SYSTEM_PROMPT = """根据以下 SPARQL 查询结果，用中文简洁回答用户问题。
+DEFAULT_ANSWER_PROMPT = """根据以下 SPARQL 查询结果，用中文简洁回答用户问题。
 
 用户问题: {question}
 SPARQL 查询结果: {result}
@@ -53,15 +22,35 @@ SPARQL 查询结果: {result}
 简洁回答:"""
 
 
+def reload_client(
+    base_url: str,
+    api_key: str,
+    model: str,
+    temperature: float = 0.1,
+    max_tokens: int = 1024,
+):
+    """Reload LLM client with new config."""
+    global _client, _model, _temperature, _max_tokens
+    _client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+    _model = model
+    _temperature = temperature
+    _max_tokens = max_tokens
+    logger.info(f"LLM client reloaded: model={model}, base_url={base_url}")
+
+
 def build_sparql_prompt(
     classes: list[str],
     properties: list[str],
     relationships: list[str],
     prefixes: dict[str, str],
+    template: Optional[str] = None,
 ) -> str:
     """Build the SPARQL generation system prompt."""
+    if template is None:
+        template = "你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。\n\n本体结构:\n- 类: {classes}\n- 数据属性: {properties}\n- 对象属性(关系): {relationships}\n\n声明的 Prefix:\n{prefixes}\n"
+
     prefix_str = "\n".join(f"PREFIX {k}: <{v}>" for k, v in prefixes.items())
-    return SPARQL_SYSTEM_PROMPT.format(
+    return template.format(
         classes=", ".join(classes),
         properties=", ".join(properties),
         relationships=", ".join(relationships),
@@ -71,23 +60,23 @@ def build_sparql_prompt(
 
 async def generate_sparql(system_prompt: str, question: str) -> str:
     """Generate SPARQL query from natural language question."""
-    response = await client.chat.completions.create(
-        model=LLM_MODEL,
+    response = await _client.chat.completions.create(
+        model=_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
         ],
-        temperature=0.1,
-        max_tokens=1024,
+        temperature=_temperature,
+        max_tokens=_max_tokens,
     )
     return response.choices[0].message.content.strip()
 
 
 async def generate_answer(question: str, result: str) -> str:
     """Generate natural language answer from query results."""
-    prompt = ANSWER_SYSTEM_PROMPT.format(question=question, result=result)
-    response = await client.chat.completions.create(
-        model=LLM_MODEL,
+    prompt = DEFAULT_ANSWER_PROMPT.format(question=question, result=result)
+    response = await _client.chat.completions.create(
+        model=_model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=512,
