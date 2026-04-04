@@ -1,0 +1,66 @@
+services:
+  # ── PostgreSQL（绿发物业 Demo）─────────────────────────
+  postgres-lvfa:
+    image: postgres:16-alpine
+    container_name: ontop-lvfa-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: lvfa_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - ./docker/postgres/init_lvfa.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - pgdata_lvfa:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d lvfa_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI Backend（复用现有镜像）─────────────────────
+  backend-lvfa:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: ontop-lvfa-backend
+    depends_on:
+      postgres-lvfa:
+        condition: service_healthy
+    environment:
+      ONTOP_CLI: /opt/ontop-cli/ontop
+      ONTOP_OUTPUT: /opt/ontop-output
+      ONTOLOGY_FILE: /opt/ontop-output/lvfa_ontology.ttl
+      MAPPING_FILE: /opt/ontop-output/lvfa_mapping.obda
+      PROPERTIES_FILE: /opt/ontop-output/lvfa.properties
+      ONTOP_ENDPOINT_URL: http://localhost:8081
+      ONTOP_ENDPOINT_PORT: "8081"
+      FASTAPI_PORT: "8000"
+      LLM_BASE_URL: http://host.docker.internal:1234/v1
+      LLM_MODEL: zai-org/glm-4.7-flash
+    ports:
+      - "8001:8000"
+    volumes:
+      - ../ontop-test/ontop-cli:/opt/ontop-cli:ro
+      - ../ontop-test/output:/opt/ontop-output
+      - ./docker/backend/ontop-lvfa.properties:/opt/ontop-output/lvfa.properties:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Next.js Frontend（复用现有镜像）────────────────────
+  frontend-lvfa:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend/Dockerfile
+    container_name: ontop-lvfa-frontend
+    depends_on:
+      - backend-lvfa
+    environment:
+      BACKEND_URL: http://backend-lvfa:8000
+      PORT: "5000"
+      COZE_PROJECT_ENV: PROD
+    ports:
+      - "3001:5000"
+
+volumes:
+  pgdata_lvfa:

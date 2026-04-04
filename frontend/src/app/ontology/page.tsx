@@ -30,6 +30,14 @@ function parseMappingToGraph(mappingTargets: Array<{ target: string }>): ParsedG
   const nodeInfo: ParsedGraph['nodeInfo'] = {};
 
   const classFromUri = (uri: string): string => uri.split('/').pop()!;
+  // Extract class name from a URI path like .../ClassName/key=value → ClassName
+  const classFromPath = (uri: string): string => {
+    const segments = uri.split('/').filter(Boolean);
+    // Last segment is like "ClassName" or "key=value"
+    const last = segments[segments.length - 1] || '';
+    if (last.includes('=')) return segments[segments.length - 2] || last;
+    return last;
+  };
 
   // First pass: identify all classes from "a <...>" patterns only
   for (const m of mappingTargets) {
@@ -43,6 +51,7 @@ function parseMappingToGraph(mappingTargets: Array<{ target: string }>): ParsedG
     const target = m.target;
 
     if (target.includes('#ref-')) {
+      // Retail-style: inline ref- relationship in class mapping
       const subjectUri = target.match(/^<([^>]+)>/)?.[1] || '';
       const subjectSegments = subjectUri.split('/').filter(Boolean);
       const subjectClass = subjectSegments.length >= 2 ? subjectSegments[subjectSegments.length - 2] : 'unknown';
@@ -60,7 +69,30 @@ function parseMappingToGraph(mappingTargets: Array<{ target: string }>): ParsedG
           label: propName,
         });
       }
+    } else if (target.match(/^<[^>]+>\s+<[^>]+>\s+<[^>]+>/)) {
+      // Lvfa-style: standalone object property mapping: <subject> <predicate> <object> .
+      // No "a <class>" pattern — this is a relationship triple
+      const subjectMatch = target.match(/^<([^>]+)>/);
+      const predMatch = [...target.matchAll(/\s+<([^>]+)>\s+/g)];
+      const objectMatch = target.match(/<([^>]+>\s*\.\s*$)/) || target.match(/\s+<([^>]+)>\s*\.\s*$/);
+
+      if (subjectMatch && predMatch.length >= 1 && objectMatch) {
+        const subjectClass = classFromPath(subjectMatch[1]);
+        const predUri = predMatch[0][1];
+        const propName = classFromUri(predUri);
+        const objectClass = classFromPath(objectMatch[1]);
+
+        if (classSet.has(subjectClass) && classSet.has(objectClass) && propName !== 'type') {
+          edges.push({
+            id: `e-${subjectClass}-${propName}-${objectClass}`,
+            source: subjectClass,
+            target: objectClass,
+            label: propName,
+          });
+        }
+      }
     } else {
+      // Class mapping with data properties
       const classMatch = target.match(/a\s+<([^>]+)>/);
       if (!classMatch) continue;
       const className = classFromUri(classMatch[1]);
@@ -68,6 +100,10 @@ function parseMappingToGraph(mappingTargets: Array<{ target: string }>): ParsedG
       const props: string[] = [];
       for (const pm of target.matchAll(/<[^>]+#([^>]+)>\s+\{/g)) {
         if (!pm[1].startsWith('ref-')) props.push(pm[1]);
+      }
+      // Also handle full URI data properties (lvfa-style): <.../v1/projectId> {val}^^xsd:type
+      for (const pm of target.matchAll(/<[^>]+\/v1\/([^>]+)>\s+\{/g)) {
+        if (!props.includes(pm[1])) props.push(pm[1]);
       }
 
       if (nodeInfo[className]) {
