@@ -25,6 +25,7 @@ import {
   Loader2,
   MessageSquareText,
   Plus,
+  RefreshCw,
   Save,
   Server,
   Settings2,
@@ -33,13 +34,7 @@ import {
   WandSparkles,
   Zap,
 } from 'lucide-react';
-import type { QuickQuestion } from '@/lib/api';
-
-interface ProviderPreset {
-  label: string;
-  base_url: string;
-  models: string[];
-}
+import { ai, type ModelDiscoveryResponse, type ProviderPreset, type QuickQuestion } from '@/lib/api';
 
 const PROVIDER_ICONS: Record<string, string> = {
   openai: '🤖',
@@ -157,6 +152,11 @@ export default function SettingsPage() {
 
   const [providers, setProviders] = useState<Record<string, ProviderPreset>>({});
   const [selectedProvider, setSelectedProvider] = useState<string>('lm_studio');
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [modelSource, setModelSource] = useState<ModelDiscoveryResponse['source']>('manual');
+  const [modelWarning, setModelWarning] = useState<string | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [manualModelEntry, setManualModelEntry] = useState(false);
 
   const [systemPrompt, setSystemPrompt] = useState('');
   const [originalPrompt, setOriginalPrompt] = useState('');
@@ -173,10 +173,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/v1/ai/config').then((r) => r.json()),
+      ai.getConfig(),
       fetch('/api/v1/ai/providers').then((r) => r.json()),
-      fetch('/api/v1/ai/system-prompt').then((r) => r.json()),
-      fetch('/api/v1/ai/quick-questions').then((r) => r.json()),
+      ai.getSystemPrompt(),
+      ai.getQuickQuestions(),
     ])
       .then(([cfg, provs, promptData, qData]) => {
         setConfig(cfg);
@@ -189,12 +189,20 @@ export default function SettingsPage() {
         const quickQuestions = (qData as { questions?: QuickQuestion[] }).questions || [];
         setQuestions(quickQuestions);
         setOriginalQuestions(quickQuestions);
+        setManualModelEntry(false);
       })
       .catch((err: Error) => {
         toast.error(`加载 AI 设置失败: ${err.message}`);
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!loading && selectedProvider && config.llm_base_url) {
+      void loadModels(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, selectedProvider]);
 
   const handleProviderChange = (provider: string) => {
     setSelectedProvider(provider);
@@ -216,11 +224,53 @@ export default function SettingsPage() {
 
     setConfig(updates);
     setConfigChanged(true);
+    setManualModelEntry(false);
   };
 
   const updateField = (field: string, value: unknown) => {
     setConfig({ ...config, [field]: value });
     setConfigChanged(true);
+  };
+
+  const loadModels = async (showSuccess = true) => {
+    setLoadingModels(true);
+    setModelWarning(null);
+    try {
+      const result = await ai.discoverModels({
+        provider: selectedProvider,
+        base_url: config.llm_base_url,
+        api_key: config.llm_api_key,
+      });
+      setDiscoveredModels(result.models);
+      setModelSource(result.source);
+      setModelWarning(result.warning || null);
+
+      if (result.models.length > 0) {
+        const hasCurrent = result.models.includes(config.llm_model || '');
+        if (!config.llm_model || !hasCurrent) {
+          updateField('llm_model', result.models[0]);
+        }
+        setManualModelEntry(!hasCurrent && Boolean(config.llm_model));
+      } else {
+        setManualModelEntry(true);
+      }
+
+      if (showSuccess) {
+        toast.success(result.source === 'remote' ? '已拉取最新模型列表' : '已加载可用模型候选');
+      }
+      if (result.warning) {
+        toast.warning(result.warning);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '未知错误';
+      setDiscoveredModels([]);
+      setModelSource('manual');
+      setModelWarning(`无法拉取模型列表: ${message}`);
+      setManualModelEntry(true);
+      toast.error(`拉取模型列表失败: ${message}`);
+    } finally {
+      setLoadingModels(false);
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -304,6 +354,8 @@ export default function SettingsPage() {
   const providerHints = PROVIDER_HINTS[selectedProvider] || PROVIDER_HINTS.custom;
   const currentModelLabel = config.llm_model || '未配置';
   const currentProviderLabel = currentProviderPreset?.label || selectedProvider || '未配置';
+  const availableModels = discoveredModels.length > 0 ? discoveredModels : (currentProviderPreset?.models || []);
+  const useModelSelect = availableModels.length > 0;
   const pendingChanges = [configChanged, promptChanged, questionsChanged].filter(Boolean).length;
   const promptLineCount = systemPrompt.split('\n').filter((line) => line.trim()).length;
 
@@ -420,29 +472,55 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-sm font-medium">
-                        <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
-                        模型名称
-                      </Label>
-                      {currentProviderPreset && currentProviderPreset.models.length > 0 ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="flex items-center gap-2 text-sm font-medium">
+                          <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+                          模型名称
+                        </Label>
+                        <div className="flex items-center gap-2">
+                          {modelSource === 'remote' && (
+                            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600">自动获取</Badge>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => void loadModels(true)}
+                            disabled={loadingModels || !config.llm_base_url}
+                          >
+                            {loadingModels ? (
+                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                            )}
+                            刷新列表
+                          </Button>
+                        </div>
+                      </div>
+                      {useModelSelect ? (
                         <>
                           <Select
-                            value={currentProviderPreset.models.includes(config.llm_model) ? config.llm_model : 'custom'}
+                            value={availableModels.includes(config.llm_model) ? config.llm_model : 'custom'}
                             onValueChange={(value) => {
-                              if (value !== 'custom') updateField('llm_model', value);
+                              if (value === 'custom') {
+                                setManualModelEntry(true);
+                                return;
+                              }
+                              updateField('llm_model', value);
+                              setManualModelEntry(false);
                             }}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="选择模型" />
                             </SelectTrigger>
                             <SelectContent>
-                              {currentProviderPreset.models.map((model) => (
+                              {availableModels.map((model) => (
                                 <SelectItem key={model} value={model}>{model}</SelectItem>
                               ))}
                               <SelectItem value="custom">自定义...</SelectItem>
                             </SelectContent>
                           </Select>
-                          {!currentProviderPreset.models.includes(config.llm_model || '') && (
+                          {(manualModelEntry || !availableModels.includes(config.llm_model || '')) && (
                             <Input
                               value={config.llm_model || ''}
                               onChange={(e) => updateField('llm_model', e.target.value)}
@@ -459,6 +537,14 @@ export default function SettingsPage() {
                           className="font-mono text-sm"
                         />
                       )}
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">
+                          优先从当前 Provider 自动拉取模型列表，拉取失败时回退到预设或手动输入。
+                        </p>
+                        {modelWarning && (
+                          <p className="text-xs text-amber-500">{modelWarning}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
 

@@ -1,7 +1,7 @@
 """AI natural language query router."""
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -148,6 +148,115 @@ class AIConfigUpdate(BaseModel):
     llm_model: Optional[str] = None
     llm_temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+
+
+class ModelDiscoveryRequest(BaseModel):
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+def _resolve_effective_ai_settings(data: ModelDiscoveryRequest) -> tuple[str, str, str]:
+    config = _load_ai_config()
+    provider = data.provider or config.get("llm_provider", DEFAULT_CONFIG["llm_provider"])
+    base_url = data.base_url or config.get("llm_base_url", DEFAULT_CONFIG["llm_base_url"])
+    api_key = data.api_key or config.get("llm_api_key", "")
+
+    # The UI receives a masked key; fall back to saved config when unchanged.
+    if "*" in api_key:
+        api_key = config.get("llm_api_key", "")
+
+    return provider, base_url, api_key
+
+
+def _normalize_base_url(base_url: str) -> str:
+    return base_url.rstrip("/")
+
+
+async def _fetch_openai_compatible_models(base_url: str, api_key: str) -> list[str]:
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        response = await client.get(f"{_normalize_base_url(base_url)}/models", headers=headers)
+        response.raise_for_status()
+        payload = response.json()
+
+    models = payload.get("data", [])
+    names = [item.get("id", "") for item in models if isinstance(item, dict) and item.get("id")]
+    return sorted(set(names))
+
+
+async def _fetch_ollama_models(base_url: str) -> list[str]:
+    normalized = _normalize_base_url(base_url)
+    candidates = []
+
+    if normalized.endswith("/v1"):
+        candidates.append(f"{normalized[:-3]}/api/tags")
+    candidates.append(f"{normalized}/api/tags")
+
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                response = await client.get(candidate)
+                response.raise_for_status()
+                payload = response.json()
+                models = payload.get("models", [])
+                names = [item.get("name", "") for item in models if isinstance(item, dict) and item.get("name")]
+                cleaned = sorted(set(name.split(":", 1)[0] if ":" in name else name for name in names))
+                if cleaned:
+                    return cleaned
+            except Exception as exc:  # pragma: no cover - network branch
+                last_error = exc
+        if last_error:
+            raise last_error
+    return []
+
+
+@router.post("/models")
+async def discover_models(data: ModelDiscoveryRequest):
+    """Discover available models for the current provider."""
+    provider, base_url, api_key = _resolve_effective_ai_settings(data)
+    preset = PROVIDER_PRESETS.get(provider, {"models": []})
+    fallback_models = list(preset.get("models", []))
+
+    if not base_url:
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "models": fallback_models,
+            "source": "preset",
+            "warning": "未配置 Base URL，返回预设模型列表。",
+        }
+
+    try:
+        if provider == "ollama":
+            models = await _fetch_ollama_models(base_url)
+        else:
+            models = await _fetch_openai_compatible_models(base_url, api_key)
+
+        if not models:
+            raise HTTPException(status_code=404, detail="No models returned")
+
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "models": models,
+            "source": "remote",
+            "warning": None,
+        }
+    except Exception as exc:
+        logger.warning("Failed to discover models for provider %s: %s", provider, exc)
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "models": fallback_models,
+            "source": "preset" if fallback_models else "manual",
+            "warning": "无法自动拉取模型列表，已切换到预设或手动输入。",
+            "error": str(exc),
+        }
 
 
 @router.get("/providers")

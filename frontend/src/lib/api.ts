@@ -252,6 +252,7 @@ export interface AIStep {
 }
 
 export interface AIConfig {
+  llm_provider?: string;
   llm_base_url: string;
   llm_api_key: string;
   llm_model: string;
@@ -262,6 +263,21 @@ export interface AIConfig {
 export interface QuickQuestion {
   id: string;
   question: string;
+}
+
+export interface ProviderPreset {
+  label: string;
+  base_url: string;
+  models: string[];
+}
+
+export interface ModelDiscoveryResponse {
+  provider: string;
+  base_url: string;
+  models: string[];
+  source: 'remote' | 'preset' | 'manual';
+  warning?: string | null;
+  error?: string;
 }
 
 export const ai = {
@@ -304,6 +320,11 @@ export const ai = {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
+  discoverModels: (data: { provider?: string; base_url?: string; api_key?: string }) =>
+    api<ModelDiscoveryResponse>('/ai/models', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   getSystemPrompt: () =>
     api<{ system_prompt: string }>('/ai/system-prompt'),
   updateSystemPrompt: (system_prompt: string) =>
