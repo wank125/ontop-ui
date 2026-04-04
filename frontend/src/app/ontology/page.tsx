@@ -44,34 +44,49 @@ function parseMappingToGraph(mappingTargets: Array<{ target: string }>): ParsedG
   const edges: ParsedGraph['edges'] = [];
   const nodeInfo: ParsedGraph['nodeInfo'] = {};
 
+  // Helper: extract class name from a URI like http://example.com/retail/dim_employee
+  const classFromUri = (uri: string): string => uri.split('/').pop()!;
+
+  // First pass: identify all classes from "a <...>" patterns only
+  for (const m of mappingTargets) {
+    for (const cm of m.target.matchAll(/a\s+<([^>]+)>/g)) {
+      classSet.add(classFromUri(cm[1]));
+    }
+  }
+
+  // Second pass: parse edges and fields
   for (const m of mappingTargets) {
     const target = m.target;
 
-    for (const cm of target.matchAll(/a\s+<([^>]+)>/g)) {
-      classSet.add(cm[1].split('/').pop()!);
-    }
-
     if (target.includes('#ref-')) {
-      const subjectMatch = target.match(/<([^>]+)\/([^\/]+)\/[^=]+=/);
-      const subjectClass = subjectMatch?.[2] || 'unknown';
-      const objectMatch = [...target.matchAll(/<[^>]+#ref-[^>]+>\s+<([^>]+)\/([^\/]+)\/[^=]+=/g)];
-      const objectClass = objectMatch.length > 0 ? objectMatch[0][2] : 'unknown';
+      // Object property (relationship) — extract classes from URI segments
+      // Subject: first URI, e.g. <http://example.com/retail/dim_employee/emp_id={...}>
+      //   → split path: [..., "retail", "dim_employee", "emp_id={...}"] → class = "dim_employee"
+      const subjectUri = target.match(/^<([^>]+)>/)?.[1] || '';
+      const subjectSegments = subjectUri.split('/').filter(Boolean);
+      const subjectClass = subjectSegments.length >= 2 ? subjectSegments[subjectSegments.length - 2] : 'unknown';
+      // Object: URI after the ref- property, e.g. <http://example.com/retail/dim_store/store_id={...}>
+      const objectUri = [...target.matchAll(/<[^>]+#ref-[^>]+>\s+<([^>]+)>/g)];
+      const objectSegments = objectUri.length > 0 ? objectUri[0][1].split('/').filter(Boolean) : [];
+      const objectClass = objectSegments.length >= 2 ? objectSegments[objectSegments.length - 2] : 'unknown';
+      // Property name from ref-
       const propMatch = target.match(/#([^>]*ref-[^>]*)>/);
       const propName = propMatch?.[1] || 'ref';
 
-      classSet.add(subjectClass);
-      classSet.add(objectClass);
-
-      edges.push({
-        id: `e-${subjectClass}-${propName}-${objectClass}`,
-        source: subjectClass,
-        target: objectClass,
-        label: propName,
-      });
+      // Only add edge if both classes are known real classes
+      if (classSet.has(subjectClass) && classSet.has(objectClass)) {
+        edges.push({
+          id: `e-${subjectClass}-${propName}-${objectClass}`,
+          source: subjectClass,
+          target: objectClass,
+          label: propName,
+        });
+      }
     } else {
+      // Data property — extract fields for the class
       const classMatch = target.match(/a\s+<([^>]+)>/);
-      const className = classMatch?.[1].split('/').pop() || 'unknown';
-      classSet.add(className);
+      if (!classMatch) continue;
+      const className = classFromUri(classMatch[1]);
 
       const props: string[] = [];
       for (const pm of target.matchAll(/<[^>]+#([^>]+)>\s+\{/g)) {
@@ -100,33 +115,43 @@ const NODE_HEIGHT = 56;
 function getLayoutedElements(
   classes: string[],
   edges: ParsedGraph['edges'],
+  nodeInfo: Record<string, { fields: string[] }>,
 ): { nodes: Node[]; edges: Edge[] } {
-  dagreGraph.setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 100 });
+  dagreGraph.setGraph({ rankdir: 'TB', nodesep: 100, ranksep: 120 });
+
+  const nodeHeight = (cls: string) => {
+    const fields = nodeInfo[cls]?.fields ?? [];
+    return fields.length > 0 ? 56 + fields.length * 20 : 56;
+  };
 
   const nodes: Node[] = classes.map((cls) => ({
     id: cls,
     type: 'classNode',
-    data: { label: cls },
+    data: { label: cls, fields: nodeInfo[cls]?.fields ?? [] },
     position: { x: 0, y: 0 },
   }));
 
   nodes.forEach((node) =>
-    dagreGraph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT }),
+    dagreGraph.setNode(node.id, { width: NODE_WIDTH, height: nodeHeight(node.id) }),
   );
 
-  const rfEdges: Edge[] = edges.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    type: 'smoothstep',
-    label: e.label,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    style: { stroke: 'oklch(0.55 0.10 270)', strokeWidth: 1.5 },
-    labelStyle: { fill: 'oklch(0.60 0.05 270)', fontSize: 11, fontFamily: 'var(--font-mono)' },
-    labelBgStyle: { fill: 'oklch(0.14 0.01 270)', fillOpacity: 0.9 },
-    labelBgPadding: [4, 6] as [number, number],
-    labelBgBorderRadius: 4,
-  }));
+  const rfEdges: Edge[] = edges.map((e) => {
+    // Clean label: remove "ref-" prefix for display
+    const displayLabel = e.label.replace(/^ref-/, '');
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      type: 'smoothstep',
+      label: displayLabel,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'oklch(0.55 0.12 200)' },
+      style: { stroke: 'oklch(0.50 0.08 270)', strokeWidth: 1.5 },
+      labelStyle: { fill: 'oklch(0.65 0.08 200)', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 500 },
+      labelBgStyle: { fill: 'oklch(0.14 0.01 270)', fillOpacity: 0.95, stroke: 'oklch(0.28 0.02 270)', strokeWidth: 0.5 },
+      labelBgPadding: [4, 8] as [number, number],
+      labelBgBorderRadius: 6,
+    };
+  });
 
   rfEdges.forEach((edge) => dagreGraph.setEdge(edge.source, edge.target));
 
@@ -142,25 +167,42 @@ function getLayoutedElements(
 
 // ── Custom ClassNode ────────────────────────────────────
 
+interface ClassNodeData extends Record<string, unknown> {
+  label: string;
+  fields: string[];
+}
+
 function ClassNode({ data, selected }: NodeProps) {
+  const d = data as unknown as ClassNodeData;
   return (
     <div
       className={`
-        min-w-[180px] rounded-lg border bg-card shadow-lg transition-all duration-200
+        min-w-[180px] rounded-xl border backdrop-blur-sm transition-all duration-200
         ${selected
-          ? 'border-primary shadow-[0_0_20px_oklch(0.70_0.15_280_/_0.3)] scale-105'
-          : 'border-border hover:border-primary/50 hover:shadow-[0_0_12px_oklch(0.70_0.15_280_/_0.15)]'
+          ? 'border-primary shadow-[0_0_24px_oklch(0.70_0.15_280_/_0.35)] scale-[1.03]'
+          : 'border-border/60 bg-card/90 hover:border-primary/40 hover:shadow-[0_0_16px_oklch(0.70_0.15_280_/_0.15)]'
         }
+        bg-card/90
       `}
     >
-      <Handle type="target" position={Position.Top} className="!bg-primary !w-2 !h-2 !border-0" />
-      <div className="flex items-center gap-2 rounded-t-lg bg-gradient-to-r from-primary/20 to-accent/10 px-3 py-2 border-b border-border">
-        <div className="flex h-5 w-5 items-center justify-center rounded bg-primary/30">
-          <GitGraph className="h-3 w-3 text-primary-foreground" />
+      <Handle type="target" position={Position.Top} className="!bg-primary !w-2 !h-2 !border-0 !top-[-4px]" />
+      <div className="flex items-center gap-2.5 rounded-t-xl bg-gradient-to-r from-primary/25 via-primary/10 to-accent/10 px-3.5 py-2 border-b border-border/50">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/20 border border-primary/30">
+          <GitGraph className="h-3.5 w-3.5 text-primary" />
         </div>
-        <span className="text-sm font-medium text-foreground">{data.label as string}</span>
+        <span className="text-sm font-semibold text-foreground tracking-wide">{d.label}</span>
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-primary !w-2 !h-2 !border-0" />
+      {d.fields && d.fields.length > 0 && (
+        <div className="px-3.5 py-2 space-y-0.5">
+          {d.fields.map((f) => (
+            <div key={f} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="inline-block h-1 w-1 rounded-full bg-primary/50" />
+              <span className="font-mono">{f}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Handle type="source" position={Position.Bottom} className="!bg-primary !w-2 !h-2 !border-0 !bottom-[-4px]" />
     </div>
   );
 }
@@ -198,7 +240,7 @@ export default function OntologyPage() {
       .then((content) => {
         const graph = parseMappingToGraph(content.mappings);
         setParsedData(graph);
-        const { nodes, edges } = getLayoutedElements(graph.classes, graph.edges);
+        const { nodes, edges } = getLayoutedElements(graph.classes, graph.edges, graph.nodeInfo);
         setRfNodes(nodes);
         setRfEdges(edges);
       })
