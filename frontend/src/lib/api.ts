@@ -25,6 +25,42 @@ export interface DataSource {
   created_at: string;
 }
 
+export interface BootstrapRequest {
+  base_iri?: string;
+  output_dir?: string;
+  mode?: 'full' | 'partial';
+  tables?: string[];
+  include_dependencies?: boolean;
+  activate_after_generate?: boolean;
+}
+
+export interface BootstrapPreview {
+  requested_tables: string[];
+  resolved_tables: string[];
+  added_dependencies: string[];
+  warnings: string[];
+  estimated_classes: string[];
+  estimated_object_properties: Array<{
+    from: string;
+    name: string;
+    to: string;
+  }>;
+}
+
+export interface BootstrapResult {
+  version: string;
+  mode: 'full' | 'partial';
+  requested_tables: string[];
+  resolved_tables: string[];
+  added_dependencies: string[];
+  ontology_path: string;
+  mapping_path: string;
+  properties_path: string;
+  manifest_path: string;
+  selected_tables_path: string;
+  output: string;
+}
+
 export interface MappingRule {
   mapping_id: string;
   target: string;
@@ -69,8 +105,13 @@ export const datasources = {
     api<{ connected: boolean; message: string }>(`/datasources/${id}/test`, { method: 'POST' }),
   schema: (id: string) =>
     api<any>(`/datasources/${id}/schema`),
-  bootstrap: (id: string, data: { base_iri?: string; output_dir?: string }) =>
-    api<{ ontology_path: string; mapping_path: string; properties_path: string; output: string }>(
+  bootstrapPreview: (id: string, data: BootstrapRequest) =>
+    api<BootstrapPreview>(`/datasources/${id}/bootstrap-preview`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bootstrap: (id: string, data: BootstrapRequest) =>
+    api<BootstrapResult>(
       `/datasources/${id}/bootstrap`,
       { method: 'POST', body: JSON.stringify(data) },
     ),
@@ -210,6 +251,19 @@ export interface AIStep {
   answer?: string;
 }
 
+export interface AIConfig {
+  llm_base_url: string;
+  llm_api_key: string;
+  llm_model: string;
+  llm_temperature: number;
+  max_tokens: number;
+}
+
+export interface QuickQuestion {
+  id: string;
+  question: string;
+}
+
 export const ai = {
   ontologySummary: () =>
     api<{ classes: string[]; data_properties: string[]; object_properties: string[]; prefixes: Record<string, string> }>(
@@ -241,4 +295,27 @@ export const ai = {
       try { yield JSON.parse(buffer.slice(6)); } catch { /* skip */ }
     }
   },
+
+  // ── AI Config ────────────────────────────────────
+  getConfig: () =>
+    api<AIConfig>('/ai/config'),
+  updateConfig: (data: Partial<AIConfig>) =>
+      api<{ success: boolean; message: string }>('/ai/config', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+  getSystemPrompt: () =>
+    api<{ system_prompt: string }>('/ai/system-prompt'),
+  updateSystemPrompt: (system_prompt: string) =>
+    api<{ success: boolean; message: string }>('/ai/system-prompt', {
+      method: 'PUT',
+      body: JSON.stringify({ system_prompt }),
+    }),
+  getQuickQuestions: () =>
+    api<{ questions: QuickQuestion[] }>('/ai/quick-questions'),
+  updateQuickQuestions: (questions: QuickQuestion[]) =>
+    api<{ success: boolean; message: string }>('/ai/quick-questions', {
+      method: 'PUT',
+      body: JSON.stringify({ questions }),
+    }),
 };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -26,9 +28,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
 import {
   Activity,
   ArrowRight,
+  CheckCircle2,
   Database,
   KeyRound,
   Link2,
@@ -38,8 +42,9 @@ import {
   ShieldAlert,
   Sparkles,
   Table as TableIcon,
+  WandSparkles,
 } from 'lucide-react';
-import { datasources, type DataSource } from '@/lib/api';
+import { datasources, type BootstrapPreview as ApiBootstrapPreview, type BootstrapResult, type DataSource } from '@/lib/api';
 
 interface Column {
   name: string;
@@ -118,7 +123,7 @@ function inferPropertyColumns(relation: CleanedRelation) {
     .filter((columnName) => !relation.primaryKeyColumns.includes(columnName) && !foreignKeyColumns.has(columnName));
 }
 
-function buildBootstrapPreview(relation: CleanedRelation) {
+function buildTableBootstrapPreview(relation: CleanedRelation) {
   const identifierColumns = inferIdentifierColumns(relation);
   const uriColumn = identifierColumns[0] ?? relation.columns[0]?.name ?? 'id';
   const propertyColumns = inferPropertyColumns(relation);
@@ -147,6 +152,12 @@ export default function DbSchemaPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTableName, setSelectedTableName] = useState('');
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [includeDependencies, setIncludeDependencies] = useState(true);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [generatingPartial, setGeneratingPartial] = useState(false);
+  const [partialPreview, setPartialPreview] = useState<ApiBootstrapPreview | null>(null);
+  const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
 
   const loadSchema = async (dataSourceId: string) => {
     if (!dataSourceId) return;
@@ -172,6 +183,12 @@ export default function DbSchemaPage() {
   useEffect(() => {
     if (!selectedId) return;
     loadSchema(selectedId);
+  }, [selectedId]);
+
+  useEffect(() => {
+    setSelectedTables([]);
+    setPartialPreview(null);
+    setBootstrapResult(null);
   }, [selectedId]);
 
   const cleanedRelations = useMemo<CleanedRelation[]>(() => {
@@ -251,7 +268,7 @@ export default function DbSchemaPage() {
 
   const selectedRelation =
     filteredRelations.find((relation) => relation.tableName === selectedTableName) ?? null;
-  const bootstrapPreview = selectedRelation ? buildBootstrapPreview(selectedRelation) : null;
+  const bootstrapPreview = selectedRelation ? buildTableBootstrapPreview(selectedRelation) : null;
 
   const totalColumns = cleanedRelations.reduce((sum, relation) => sum + relation.columns.length, 0);
   const totalForeignKeys = cleanedRelations.reduce((sum, relation) => sum + relation.foreignKeys.length, 0);
@@ -287,6 +304,71 @@ export default function DbSchemaPage() {
   }, [cleanedRelations, totalForeignKeys]);
 
   const selectedDataSource = dsList.find((ds) => ds.id === selectedId) ?? null;
+
+  const toggleSelectedTable = (tableName: string, checked: boolean) => {
+    setSelectedTables((current) =>
+      checked ? [...new Set([...current, tableName])] : current.filter((item) => item !== tableName)
+    );
+    setPartialPreview(null);
+    setBootstrapResult(null);
+  };
+
+  const handlePreviewPartialBootstrap = async () => {
+    if (!selectedId || selectedTables.length === 0) {
+      toast.error('请先勾选至少一张表');
+      return;
+    }
+
+    setPreviewLoading(true);
+    try {
+      const preview = await datasources.bootstrapPreview(selectedId, {
+        mode: 'partial',
+        tables: selectedTables,
+        include_dependencies: includeDependencies,
+        base_iri: 'http://example.com/ontop/',
+      });
+      setPartialPreview(preview);
+      setBootstrapResult(null);
+      toast.success('局部 Bootstrap 预览已生成');
+    } catch (error: any) {
+      toast.error(error.message || '局部 Bootstrap 预览失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleGeneratePartialBootstrap = async () => {
+    if (!selectedId || selectedTables.length === 0) {
+      toast.error('请先勾选至少一张表');
+      return;
+    }
+
+    setGeneratingPartial(true);
+    try {
+      const result = await datasources.bootstrap(selectedId, {
+        mode: 'partial',
+        tables: selectedTables,
+        include_dependencies: includeDependencies,
+        base_iri: 'http://example.com/ontop/',
+      });
+      setBootstrapResult(result);
+      if (!partialPreview) {
+        setPartialPreview({
+          requested_tables: result.requested_tables,
+          resolved_tables: result.resolved_tables,
+          added_dependencies: result.added_dependencies,
+          warnings: [],
+          estimated_classes: result.resolved_tables,
+          estimated_object_properties: [],
+        });
+      }
+      toast.success('局部 Bootstrap 已生成新版本');
+    } catch (error: any) {
+      toast.error(error.message || '局部 Bootstrap 失败');
+    } finally {
+      setGeneratingPartial(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -409,6 +491,7 @@ export default function DbSchemaPage() {
                 <div className="space-y-2">
                   {filteredRelations.map((relation) => {
                     const isSelected = relation.tableName === selectedTableName;
+                    const isChecked = selectedTables.includes(relation.tableName);
                     return (
                       <button
                         key={relation.tableName}
@@ -422,13 +505,25 @@ export default function DbSchemaPage() {
                         ].join(' ')}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-foreground">{relation.tableName}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {relation.columns.length} 列 · {relation.foreignKeys.length} 个外键 · 被引用 {relation.inboundReferences.length} 次
-                            </p>
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              checked={isChecked}
+                              onCheckedChange={(checked) => toggleSelectedTable(relation.tableName, checked === true)}
+                              className="mt-0.5"
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label={`选择表 ${relation.tableName}`}
+                            />
+                            <div>
+                              <p className="font-medium text-foreground">{relation.tableName}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {relation.columns.length} 列 · {relation.foreignKeys.length} 个外键 · 被引用 {relation.inboundReferences.length} 次
+                              </p>
+                            </div>
                           </div>
-                          <Badge variant={isSelected ? 'default' : 'secondary'}>{relation.tableKind}</Badge>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge variant={isSelected ? 'default' : 'secondary'}>{relation.tableKind}</Badge>
+                            {isChecked && <Badge variant="outline">已选</Badge>}
+                          </div>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
                           {relation.primaryKeyColumns.length > 0 ? (
@@ -489,6 +584,12 @@ export default function DbSchemaPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/30 p-3">
+                <p className="mb-2 font-medium text-foreground">局部 Bootstrap 说明</p>
+                <p className="text-muted-foreground">
+                  勾选表后可先做预览。建议优先选事实表，开启“自动补依赖”以补齐外键目标表。
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -617,20 +718,52 @@ export default function DbSchemaPage() {
                 <div className="space-y-6">
                   <Card className="border-border/80 bg-card/70">
                     <CardHeader className="gap-2">
-                      <CardTitle className="text-base">Bootstrap 预览</CardTitle>
-                      <CardDescription>展示这张表被自动生成成本体时的大致结果。</CardDescription>
+                      <CardTitle className="text-base">局部 Bootstrap</CardTitle>
+                      <CardDescription>从选中的表出发预览依赖闭包，再生成独立版本目录。</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4 text-sm">
                       <div className="rounded-xl border border-border/70 bg-background/30 p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">预计类名</p>
-                        <p className="mt-2 font-medium text-foreground">{bootstrapPreview?.className}</p>
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">自动补依赖</p>
+                            <p className="mt-2 text-sm text-foreground">根据外键补齐目标表，避免对象关系断裂。</p>
+                          </div>
+                          <Switch checked={includeDependencies} onCheckedChange={setIncludeDependencies} />
+                        </div>
                       </div>
+
                       <div className="rounded-xl border border-border/70 bg-background/30 p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">预计 URI 模板</p>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">已选表</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {selectedTables.length > 0 ? (
+                            selectedTables.map((tableName) => (
+                              <Badge key={tableName} variant="secondary">{tableName}</Badge>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground">尚未选择表</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <Button variant="outline" onClick={handlePreviewPartialBootstrap} disabled={previewLoading || selectedTables.length === 0}>
+                          {previewLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                          预览局部 Bootstrap
+                        </Button>
+                        <Button onClick={handleGeneratePartialBootstrap} disabled={generatingPartial || selectedTables.length === 0}>
+                          {generatingPartial ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <WandSparkles className="mr-2 h-4 w-4" />}
+                          生成局部版本
+                        </Button>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background/30 p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">当前表静态预览</p>
+                        <p className="mt-2 font-medium text-foreground">{bootstrapPreview?.className}</p>
                         <p className="mt-2 break-all font-mono text-xs text-foreground">{bootstrapPreview?.uriTemplate}</p>
                       </div>
+
                       <div className="rounded-xl border border-border/70 bg-background/30 p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">数据属性候选</p>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">当前表数据属性候选</p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {bootstrapPreview?.propertyColumns.length ? (
                             bootstrapPreview.propertyColumns.map((columnName) => (
@@ -642,7 +775,7 @@ export default function DbSchemaPage() {
                         </div>
                       </div>
                       <div className="rounded-xl border border-border/70 bg-background/30 p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">对象属性候选</p>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">当前表对象属性候选</p>
                         <div className="mt-3 space-y-2">
                           {bootstrapPreview?.objectProperties.length ? (
                             bootstrapPreview.objectProperties.map((property) => (
@@ -656,6 +789,92 @@ export default function DbSchemaPage() {
                             <span className="text-muted-foreground">未检测到可推断的对象关系</span>
                           )}
                         </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background/30 p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">局部预览结果</p>
+                        {partialPreview ? (
+                          <div className="mt-3 space-y-4">
+                            <div>
+                              <p className="mb-2 font-medium text-foreground">最终参与生成的表</p>
+                              <div className="flex flex-wrap gap-2">
+                                {partialPreview.resolved_tables.map((tableName) => (
+                                  <Badge key={tableName} variant="secondary">{tableName}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-2 font-medium text-foreground">自动补齐的依赖</p>
+                              <div className="flex flex-wrap gap-2">
+                                {partialPreview.added_dependencies.length > 0 ? (
+                                  partialPreview.added_dependencies.map((tableName) => (
+                                    <Badge key={tableName} variant="outline">{tableName}</Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-muted-foreground">没有新增依赖</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-2 font-medium text-foreground">预计对象属性</p>
+                              <div className="space-y-2">
+                                {partialPreview.estimated_object_properties.length > 0 ? (
+                                  partialPreview.estimated_object_properties.map((property) => (
+                                    <div key={`${property.from}-${property.name}-${property.to}`} className="flex items-center gap-2 text-muted-foreground">
+                                      <span className="text-xs text-foreground">{property.from}</span>
+                                      <ArrowRight className="h-3 w-3" />
+                                      <span className="font-mono text-xs text-foreground">{property.name}</span>
+                                      <ArrowRight className="h-3 w-3" />
+                                      <span className="text-xs">{property.to}</span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <span className="text-muted-foreground">本次预览未推断出对象属性</span>
+                                )}
+                              </div>
+                            </div>
+                            {partialPreview.warnings.length > 0 && (
+                              <div>
+                                <p className="mb-2 font-medium text-foreground">警告</p>
+                                <ul className="space-y-2 text-muted-foreground">
+                                  {partialPreview.warnings.map((warning) => (
+                                    <li key={warning}>{warning}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-muted-foreground">先勾选表并点击“预览局部 Bootstrap”。</p>
+                        )}
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background/30 p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">最近生成结果</p>
+                        {bootstrapResult ? (
+                          <div className="mt-3 space-y-3">
+                            <div className="flex items-center gap-2 text-emerald-500">
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span className="text-sm font-medium">{bootstrapResult.version}</span>
+                            </div>
+                            <div className="space-y-2 text-xs text-muted-foreground">
+                              <div>
+                                <span className="font-medium text-foreground">Ontology:</span>{' '}
+                                <code>{bootstrapResult.ontology_path}</code>
+                              </div>
+                              <div>
+                                <span className="font-medium text-foreground">Mapping:</span>{' '}
+                                <code>{bootstrapResult.mapping_path}</code>
+                              </div>
+                              <div>
+                                <span className="font-medium text-foreground">Manifest:</span>{' '}
+                                <code>{bootstrapResult.manifest_path}</code>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-muted-foreground">尚未生成局部版本。</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

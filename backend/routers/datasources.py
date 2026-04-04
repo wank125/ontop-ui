@@ -10,6 +10,14 @@ from fastapi import APIRouter, HTTPException
 
 from models.datasource import DataSource, DataSourceCreate, DataSourceUpdate, BootstrapRequest
 from services.ontop_cli import extract_db_metadata, bootstrap as ontop_bootstrap
+from services.bootstrap_service import (
+    build_preview,
+    generate_partial_bootstrap,
+    get_version_dir,
+    load_schema_metadata,
+    resolve_requested_tables,
+    write_manifest,
+)
 from config import DATA_DIR
 
 router = APIRouter(prefix="/datasources", tags=["datasources"])
@@ -110,32 +118,101 @@ async def get_schema(ds_id: str):
 @router.post("/{ds_id}/bootstrap")
 async def run_bootstrap(ds_id: str, req: BootstrapRequest):
     ds = _get_ds(ds_id)
-    output_dir = req.output_dir or str(Path(DATA_DIR) / ds["id"])
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
     base_name = ds["name"].replace(" ", "_")
-    props_path = f"{output_dir}/{base_name}.properties"
-    onto_path = f"{output_dir}/{base_name}_ontology.ttl"
-    mapping_path = f"{output_dir}/{base_name}_mapping.obda"
+    root_output_dir = Path(req.output_dir) if req.output_dir else Path(DATA_DIR) / ds["id"]
+    root_output_dir.mkdir(parents=True, exist_ok=True)
 
-    _write_properties(ds, props_path)
+    effective_mode = "partial" if req.mode == "partial" or req.tables else "full"
+    requested_tables = [table for table in req.tables if table.strip()]
+    resolved_tables: list[str] = []
+    added_dependencies: list[str] = []
 
-    success, output = await ontop_bootstrap(
-        base_iri=req.base_iri,
-        ontology_path=onto_path,
-        mapping_path=mapping_path,
-        properties_path=props_path,
-    )
+    if effective_mode == "partial":
+        if not requested_tables:
+            raise HTTPException(400, "Partial bootstrap requires at least one selected table.")
+        schema = await _get_schema_metadata(ds)
+        requested_tables, resolved_tables, added_dependencies = resolve_requested_tables(
+            schema,
+            requested_tables,
+            req.include_dependencies,
+        )
 
-    if not success:
-        raise HTTPException(400, f"Bootstrap failed: {output[:500]}")
+    version, version_dir = get_version_dir(root_output_dir, effective_mode)
+    props_path = version_dir / f"{base_name}.properties"
+    _write_properties(ds, str(props_path))
 
-    return {
+    if effective_mode == "partial":
+        onto_path, mapping_path, output = await generate_partial_bootstrap(
+            base_iri=req.base_iri,
+            version_dir=version_dir,
+            base_name=base_name,
+            properties_path=str(props_path),
+            requested_tables=requested_tables,
+            resolved_tables=resolved_tables,
+        )
+    else:
+        onto_path = str(version_dir / f"{base_name}_ontology.ttl")
+        mapping_path = str(version_dir / f"{base_name}_mapping.obda")
+        success, output = await ontop_bootstrap(
+            base_iri=req.base_iri,
+            ontology_path=onto_path,
+            mapping_path=mapping_path,
+            properties_path=str(props_path),
+        )
+        if not success:
+            raise HTTPException(400, f"Bootstrap failed: {output[:500]}")
+
+    manifest = {
+        "version": version,
+        "mode": effective_mode,
+        "requested_tables": requested_tables,
+        "resolved_tables": resolved_tables,
+        "added_dependencies": added_dependencies,
+        "include_dependencies": req.include_dependencies,
+        "base_iri": req.base_iri,
+        "created_at": datetime.now().isoformat(),
         "ontology_path": onto_path,
         "mapping_path": mapping_path,
-        "properties_path": props_path,
+        "properties_path": str(props_path),
+    }
+    manifest_path, selected_tables_path = write_manifest(version_dir, manifest)
+
+    return {
+        "version": version,
+        "mode": effective_mode,
+        "requested_tables": requested_tables,
+        "resolved_tables": resolved_tables,
+        "added_dependencies": added_dependencies,
+        "ontology_path": onto_path,
+        "mapping_path": mapping_path,
+        "properties_path": str(props_path),
+        "manifest_path": str(manifest_path),
+        "selected_tables_path": str(selected_tables_path),
         "output": output[:1000],
     }
+
+
+@router.post("/{ds_id}/bootstrap-preview")
+async def preview_bootstrap(ds_id: str, req: BootstrapRequest):
+    ds = _get_ds(ds_id)
+    if req.mode != "partial" and not req.tables:
+        schema = await _get_schema_metadata(ds)
+        all_tables = [
+            ".".join(part.replace('"', '') for part in relation.get("name", [])).split(".")[-1]
+            for relation in schema.get("relations", [])
+        ]
+        return build_preview(schema, all_tables, all_tables, [])
+
+    if not req.tables:
+        raise HTTPException(400, "Bootstrap preview requires at least one selected table.")
+
+    schema = await _get_schema_metadata(ds)
+    requested_tables, resolved_tables, added_dependencies = resolve_requested_tables(
+        schema,
+        req.tables,
+        req.include_dependencies,
+    )
+    return build_preview(schema, requested_tables, resolved_tables, added_dependencies)
 
 
 def _get_ds(ds_id: str) -> dict:
@@ -159,3 +236,14 @@ def _write_temp_properties(ds: dict) -> str:
     _write_properties(ds, tmp.name)
     tmp.close()
     return tmp.name
+
+
+async def _get_schema_metadata(ds: dict) -> dict:
+    props_path = _write_temp_properties(ds)
+    try:
+        success, output = await extract_db_metadata(props_path)
+        if not success:
+            raise HTTPException(400, f"Failed to extract metadata: {output[:500]}")
+        return load_schema_metadata(output)
+    finally:
+        Path(props_path).unlink(missing_ok=True)
