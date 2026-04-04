@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import FASTAPI_PORT
-from routers import datasources, mappings, sparql, ai_query
+from routers import datasources, mappings, sparql, ai_query, ontology
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s |%(levelname)-6s| %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ app.include_router(datasources.router, prefix="/api/v1")
 app.include_router(mappings.router, prefix="/api/v1")
 app.include_router(sparql.router, prefix="/api/v1")
 app.include_router(ai_query.router, prefix="/api/v1")
+app.include_router(ontology.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health")

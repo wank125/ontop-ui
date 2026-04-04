@@ -13,8 +13,10 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { GitGraph, Info, Loader2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
-import { mappings, type MappingFile } from '@/lib/api';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GitGraph, BookOpen, Info, Loader2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { mappings, ontology as ontologyApi, type MappingFile } from '@/lib/api';
+import { OntologyDefinitionView } from './components/ontology-definition-view';
 
 // ── Data types ──────────────────────────────────────────
 
@@ -224,8 +226,18 @@ function getNetworkOptions() {
 // ── Page Component ──────────────────────────────────────
 
 export default function OntologyPage() {
-  const [files, setFiles] = useState<MappingFile[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string>('');
+  // File lists
+  const [obdaFiles, setObdaFiles] = useState<MappingFile[]>([]);
+  const [ttlFiles, setTtlFiles] = useState<MappingFile[]>([]);
+
+  // Active tab
+  const [activeTab, setActiveTab] = useState<string>('graph');
+
+  // Selected files
+  const [selectedObdaPath, setSelectedObdaPath] = useState<string>('');
+  const [selectedTtlPath, setSelectedTtlPath] = useState<string>('');
+
+  // Graph state
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedGraph | null>(null);
@@ -233,20 +245,24 @@ export default function OntologyPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
 
-  // Step 1: Load file list
+  // Load file lists
   useEffect(() => {
     mappings.listFiles().then((list) => {
-      setFiles(list);
-      if (list.length > 0) setSelectedPath(list[0].path);
+      setObdaFiles(list);
+      if (list.length > 0) setSelectedObdaPath(list[0].path);
+    });
+    ontologyApi.listFiles().then((list) => {
+      setTtlFiles(list);
+      if (list.length > 0) setSelectedTtlPath(list[0].path);
     });
   }, []);
 
-  // Step 2: Fetch mapping data when selectedPath changes
+  // Fetch mapping data when selectedObdaPath changes
   useEffect(() => {
-    if (!selectedPath) return;
+    if (!selectedObdaPath) return;
     setLoading(true);
     mappings
-      .getContent(selectedPath)
+      .getContent(selectedObdaPath)
       .then((content) => {
         const graph = parseMappingToGraph(content.mappings);
         setParsedData(graph);
@@ -255,9 +271,9 @@ export default function OntologyPage() {
         setParsedData(null);
       })
       .finally(() => setLoading(false));
-  }, [selectedPath]);
+  }, [selectedObdaPath]);
 
-  // Step 3: Initialize Vis.js network when parsedData and container are ready
+  // Initialize Vis.js network when parsedData and container are ready
   useEffect(() => {
     if (!parsedData || parsedData.classes.length === 0 || !containerRef.current) return;
 
@@ -332,6 +348,11 @@ export default function OntologyPage() {
   const graphEdges = parsedData?.edges ?? [];
   const hasNodes = parsedData && parsedData.classes.length > 0;
 
+  // File selector for current tab
+  const currentFiles = activeTab === 'graph' ? obdaFiles : ttlFiles;
+  const currentPath = activeTab === 'graph' ? selectedObdaPath : selectedTtlPath;
+  const handleFileChange = activeTab === 'graph' ? setSelectedObdaPath : setSelectedTtlPath;
+
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 56px - 48px)' }}>
       {/* Header */}
@@ -347,12 +368,12 @@ export default function OntologyPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Select value={selectedPath} onValueChange={setSelectedPath}>
+            <Select value={currentPath} onValueChange={handleFileChange}>
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="选择映射文件" />
+                <SelectValue placeholder="选择文件" />
               </SelectTrigger>
               <SelectContent>
-                {files.map((file) => (
+                {currentFiles.map((file) => (
                   <SelectItem key={file.path} value={file.path}>
                     {file.filename}
                   </SelectItem>
@@ -363,139 +384,172 @@ export default function OntologyPage() {
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Vis.js Canvas */}
-        <div className="relative flex-1 bg-muted/20">
-          <div ref={containerRef} className="h-full w-full" />
-
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          )}
-
-          {!loading && !hasNodes && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center text-muted-foreground">
-                <GitGraph className="mx-auto mb-3 h-12 w-12 opacity-50" />
-                <p>选择映射文件查看本体图谱</p>
-              </div>
-            </div>
-          )}
-
-          {hasNodes && !loading && (
-            <>
-              {/* Zoom controls */}
-              <div className="absolute bottom-4 left-4 flex flex-col gap-1.5">
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-card border-border" onClick={handleZoomIn}>
-                  <ZoomIn className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-card border-border" onClick={handleZoomOut}>
-                  <ZoomOut className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8 bg-card border-border" onClick={handleFit}>
-                  <Maximize className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Legend */}
-              <div className="absolute bottom-4 left-20 rounded-lg border border-border bg-card p-3">
-                <h4 className="mb-2 text-xs font-medium">图例</h4>
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-8 rounded border border-primary bg-primary/20" />
-                    <span>类 (Entity Type)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <svg className="h-4 w-8" viewBox="0 0 32 16">
-                      <line x1="4" y1="8" x2="28" y2="8" stroke="oklch(0.55 0.10 270)" strokeWidth="1.5" />
-                      <polygon points="28,8 22,5 22,11" fill="oklch(0.55 0.10 270)" />
-                    </svg>
-                    <span>对象属性 (关系)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Info className="h-3 w-3" />
-                    <span>点击节点查看详情 | 拖拽节点移动</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
+        <div className="px-1">
+          <TabsList>
+            <TabsTrigger value="graph">
+              <GitGraph className="mr-1.5 h-4 w-4" />
+              关系图谱
+            </TabsTrigger>
+            <TabsTrigger value="ontology">
+              <BookOpen className="mr-1.5 h-4 w-4" />
+              本体定义
+            </TabsTrigger>
+          </TabsList>
         </div>
 
-        {/* Right Panel */}
-        <div className="w-72 border-l border-border p-4 overflow-y-auto">
-          {selectedNode && nodeInfo[selectedNode] ? (
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{selectedNode}</CardTitle>
+        {/* Graph Tab */}
+        <TabsContent value="graph" className="flex-1 overflow-hidden mt-0">
+          <div className="flex h-full overflow-hidden">
+            {/* Vis.js Canvas */}
+            <div className="relative flex-1 bg-muted/20">
+              <div ref={containerRef} className="h-full w-full" />
+
+              {loading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
-              </CardHeader>
-              <CardContent>
-                <h4 className="mb-2 text-xs font-medium text-muted-foreground">字段</h4>
-                <div className="space-y-1">
-                  {nodeInfo[selectedNode].fields.length > 0 ? (
-                    nodeInfo[selectedNode].fields.map((field) => (
-                      <div key={field} className="rounded bg-muted/50 px-2 py-1 font-mono text-xs">
-                        {field}
+              )}
+
+              {!loading && !hasNodes && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center text-muted-foreground">
+                    <GitGraph className="mx-auto mb-3 h-12 w-12 opacity-50" />
+                    <p>选择映射文件查看本体图谱</p>
+                  </div>
+                </div>
+              )}
+
+              {hasNodes && !loading && (
+                <>
+                  {/* Zoom controls */}
+                  <div className="absolute bottom-4 left-4 flex flex-col gap-1.5">
+                    <Button variant="outline" size="icon" className="h-8 w-8 bg-card border-border" onClick={handleZoomIn}>
+                      <ZoomIn className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 bg-card border-border" onClick={handleZoomOut}>
+                      <ZoomOut className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8 bg-card border-border" onClick={handleFit}>
+                      <Maximize className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="absolute bottom-4 left-20 rounded-lg border border-border bg-card p-3">
+                    <h4 className="mb-2 text-xs font-medium">图例</h4>
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-8 rounded border border-primary bg-primary/20" />
+                        <span>类 (Entity Type)</span>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-muted-foreground">无数据属性</p>
-                  )}
-                </div>
-
-                {graphEdges.some((e) => e.source === selectedNode || e.target === selectedNode) && (
-                  <>
-                    <h4 className="mb-2 mt-4 text-xs font-medium text-muted-foreground">关系</h4>
-                    <div className="space-y-1">
-                      {graphEdges
-                        .filter((e) => e.source === selectedNode)
-                        .map((e) => (
-                          <div key={e.id} className="rounded bg-muted/50 px-2 py-1 text-xs">
-                            <span className="text-primary">{e.label}</span> → {e.target}
-                          </div>
-                        ))}
-                      {graphEdges
-                        .filter((e) => e.target === selectedNode)
-                        .map((e) => (
-                          <div key={e.id} className="rounded bg-muted/50 px-2 py-1 text-xs">
-                            {e.source} → <span className="text-primary">{e.label}</span>
-                          </div>
-                        ))}
+                      <div className="flex items-center gap-2">
+                        <svg className="h-4 w-8" viewBox="0 0 32 16">
+                          <line x1="4" y1="8" x2="28" y2="8" stroke="oklch(0.55 0.10 270)" strokeWidth="1.5" />
+                          <polygon points="28,8 22,5 22,11" fill="oklch(0.55 0.10 270)" />
+                        </svg>
+                        <span>对象属性 (关系)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Info className="h-3 w-3" />
+                        <span>点击节点查看详情 | 拖拽节点移动</span>
+                      </div>
                     </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                <GitGraph className="mb-2 h-8 w-8 text-muted-foreground opacity-50" />
-                <p className="text-sm text-muted-foreground">点击节点查看详细信息</p>
-              </CardContent>
-            </Card>
-          )}
+                  </div>
+                </>
+              )}
+            </div>
 
-          {/* Stats */}
-          <Card className="mt-4">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">图谱统计</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">实体类</span>
-                <Badge variant="secondary">{parsedData?.classes.length ?? 0}</Badge>
+            {/* Right Panel */}
+            <div className="w-72 border-l border-border p-4 overflow-y-auto">
+              {selectedNode && nodeInfo[selectedNode] ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">{selectedNode}</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <h4 className="mb-2 text-xs font-medium text-muted-foreground">字段</h4>
+                    <div className="space-y-1">
+                      {nodeInfo[selectedNode].fields.length > 0 ? (
+                        nodeInfo[selectedNode].fields.map((field) => (
+                          <div key={field} className="rounded bg-muted/50 px-2 py-1 font-mono text-xs">
+                            {field}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-muted-foreground">无数据属性</p>
+                      )}
+                    </div>
+
+                    {graphEdges.some((e) => e.source === selectedNode || e.target === selectedNode) && (
+                      <>
+                        <h4 className="mb-2 mt-4 text-xs font-medium text-muted-foreground">关系</h4>
+                        <div className="space-y-1">
+                          {graphEdges
+                            .filter((e) => e.source === selectedNode)
+                            .map((e) => (
+                              <div key={e.id} className="rounded bg-muted/50 px-2 py-1 text-xs">
+                                <span className="text-primary">{e.label}</span> → {e.target}
+                              </div>
+                            ))}
+                          {graphEdges
+                            .filter((e) => e.target === selectedNode)
+                            .map((e) => (
+                              <div key={e.id} className="rounded bg-muted/50 px-2 py-1 text-xs">
+                                {e.source} → <span className="text-primary">{e.label}</span>
+                              </div>
+                            ))}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                    <GitGraph className="mb-2 h-8 w-8 text-muted-foreground opacity-50" />
+                    <p className="text-sm text-muted-foreground">点击节点查看详细信息</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Stats */}
+              <Card className="mt-4">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">图谱统计</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">实体类</span>
+                    <Badge variant="secondary">{parsedData?.classes.length ?? 0}</Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">关系</span>
+                    <Badge variant="secondary">{parsedData?.edges.length ?? 0}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Ontology Definition Tab */}
+        <TabsContent value="ontology" className="flex-1 overflow-hidden mt-0">
+          {selectedTtlPath ? (
+            <OntologyDefinitionView ttlPath={selectedTtlPath} />
+          ) : (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <BookOpen className="mx-auto mb-3 h-12 w-12 opacity-50" />
+                <p>选择 TTL 文件查看本体定义</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">关系</span>
-                <Badge variant="secondary">{parsedData?.edges.length ?? 0}</Badge>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

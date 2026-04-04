@@ -119,6 +119,86 @@ export const sparql = {
     api<{ running: boolean; port: number }>('/sparql/endpoint-status'),
 };
 
+// ── Ontology (TTL) ────────────────────────────────────
+
+export interface BilingualLabel {
+  zh: string;
+  en: string;
+}
+
+export interface OwlClass {
+  name: string;
+  local_name: string;
+  labels: BilingualLabel;
+  comments: BilingualLabel;
+  examples: string[];
+  domain_tag: string;
+}
+
+export interface OwlObjectProperty {
+  name: string;
+  local_name: string;
+  labels: BilingualLabel;
+  comments: BilingualLabel;
+  domain: string;
+  range: string;
+  inverse_of: string;
+}
+
+export interface OwlDataProperty {
+  name: string;
+  local_name: string;
+  labels: BilingualLabel;
+  comments: BilingualLabel;
+  domain: string;
+  range: string;
+}
+
+export interface ShaclPropertyConstraint {
+  path: string;
+  path_inverse: string;
+  min_count: number | null;
+  min_inclusive: number | null;
+  min_exclusive: number | null;
+  datatype: string;
+  has_value: string;
+  in_values: string[];
+}
+
+export interface ShaclSparqlConstraint {
+  message: string;
+  select: string;
+}
+
+export interface ShaclConstraint {
+  name: string;
+  local_name: string;
+  labels: BilingualLabel;
+  comments: BilingualLabel;
+  target_class: string;
+  properties: ShaclPropertyConstraint[];
+  sparql_constraints: ShaclSparqlConstraint[];
+}
+
+export interface TtlOntology {
+  metadata: {
+    labels: BilingualLabel;
+    comments: BilingualLabel;
+    version: string;
+    version_iri: string;
+  };
+  classes: OwlClass[];
+  object_properties: OwlObjectProperty[];
+  data_properties: OwlDataProperty[];
+  shacl_constraints: ShaclConstraint[];
+}
+
+export const ontology = {
+  listFiles: () => api<MappingFile[]>('/ontology'),
+  getContent: (path: string) =>
+    api<TtlOntology>(`/ontology/content?path=${encodeURIComponent(path)}`),
+};
+
 // ── AI ─────────────────────────────────────────────────
 
 export interface AIStep {
