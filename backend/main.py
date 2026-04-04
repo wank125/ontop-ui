@@ -2,6 +2,7 @@
 import sys
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -12,7 +13,7 @@ from fastapi.responses import Response
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import FASTAPI_PORT
-from routers import datasources, mappings, sparql, ai_query, ontology
+from database import init_db, migrate_json_to_sqlite
 
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -29,7 +30,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Ontop UI", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database and migrate JSON data on startup."""
+    logger.info("Initializing database...")
+    init_db()
+    migrate_json_to_sqlite()
+    logger.info("Database ready.")
+    yield
+
+
+app = FastAPI(title="Ontop UI", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +50,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from routers import datasources, mappings, sparql, ai_query, ontology
 
 app.include_router(datasources.router, prefix="/api/v1")
 app.include_router(mappings.router, prefix="/api/v1")

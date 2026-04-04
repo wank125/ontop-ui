@@ -1,9 +1,6 @@
 """SPARQL query center router."""
 import json
-import uuid
 import logging
-from datetime import datetime
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -11,13 +8,15 @@ from fastapi.responses import Response
 
 from models.query import SparqlQueryRequest, ReformulateRequest, QueryHistoryEntry
 from services.ontop_endpoint import get_endpoint_status, ONTOP_ENDPOINT_URL
-from config import DATA_DIR
+from repositories.query_history_repo import (
+    list_history as repo_list_history,
+    save_to_history as repo_save_history,
+    delete_history_entry as repo_delete_history,
+)
 
 router = APIRouter(prefix="/sparql", tags=["sparql"])
 
 logger = logging.getLogger(__name__)
-
-HISTORY_FILE = DATA_DIR / "query_history.json"
 
 FORMAT_MAP = {
     "json": "application/sparql-results+json",
@@ -49,7 +48,14 @@ async def execute_query(req: SparqlQueryRequest):
         raise HTTPException(resp.status_code, resp.text[:500])
 
     # Save to history
-    _save_to_history(req.query, resp.text)
+    result_count = None
+    try:
+        data = json.loads(resp.text)
+        bindings = data.get("results", {}).get("bindings", [])
+        result_count = len(bindings)
+    except Exception:
+        pass
+    repo_save_history(req.query, result_count)
 
     return Response(
         content=resp.content,
@@ -78,51 +84,16 @@ async def reformulate_query(req: ReformulateRequest):
 @router.get("/history")
 async def get_history():
     """Get query history."""
-    return _load_history()
+    return repo_list_history()
 
 
 @router.delete("/history/{entry_id}", status_code=204)
 async def delete_history(entry_id: str):
     """Delete a history entry."""
-    history = _load_history()
-    history = [h for h in history if h["id"] != entry_id]
-    _save_history_list(history)
+    repo_delete_history(entry_id)
 
 
 @router.get("/endpoint-status")
 async def endpoint_status():
     """Check Ontop endpoint status."""
     return await get_endpoint_status()
-
-
-def _load_history() -> list:
-    if not HISTORY_FILE.exists():
-        return []
-    with open(HISTORY_FILE) as f:
-        return json.load(f)
-
-
-def _save_history_list(history: list):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=2, ensure_ascii=False)
-
-
-def _save_to_history(query: str, result: str):
-    history = _load_history()
-    entry = {
-        "id": str(uuid.uuid4())[:8],
-        "query": query,
-        "timestamp": datetime.now().isoformat(),
-    }
-    # Try to count results
-    try:
-        data = json.loads(result)
-        bindings = data.get("results", {}).get("bindings", [])
-        entry["result_count"] = len(bindings)
-    except Exception:
-        pass
-
-    history.insert(0, entry)
-    # Keep last 100 entries
-    history = history[:100]
-    _save_history_list(history)

@@ -1,6 +1,5 @@
 """Data source management router."""
 import json
-import uuid
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -19,72 +18,52 @@ from services.bootstrap_service import (
     write_manifest,
 )
 from config import DATA_DIR
+from repositories.datasource_repo import (
+    list_datasources as repo_list,
+    get_datasource as repo_get,
+    create_datasource as repo_create,
+    update_datasource as repo_update,
+    delete_datasource as repo_delete,
+)
 
 router = APIRouter(prefix="/datasources", tags=["datasources"])
-
-DATA_SOURCES_FILE = DATA_DIR / "datasources.json"
-
-
-def _load_data_sources() -> list[dict]:
-    if not DATA_SOURCES_FILE.exists():
-        return []
-    with open(DATA_SOURCES_FILE) as f:
-        return json.load(f)
-
-
-def _save_data_sources(sources: list[dict]):
-    with open(DATA_SOURCES_FILE, "w") as f:
-        json.dump(sources, f, indent=2, ensure_ascii=False)
 
 
 @router.get("")
 async def list_datasources():
-    return _load_data_sources()
+    return repo_list()
 
 
 @router.post("", status_code=201)
 async def create_datasource(data: DataSourceCreate):
-    sources = _load_data_sources()
-    ds = {
-        "id": str(uuid.uuid4())[:8],
-        "name": data.name,
-        "jdbc_url": data.jdbc_url,
-        "user": data.user,
-        "password": data.password,
-        "driver": data.driver,
-        "created_at": datetime.now().isoformat(),
-    }
-    sources.append(ds)
-    _save_data_sources(sources)
-    return ds
+    return repo_create(
+        name=data.name,
+        jdbc_url=data.jdbc_url,
+        user=data.user,
+        password=data.password,
+        driver=data.driver,
+    )
 
 
 @router.get("/{ds_id}")
 async def get_datasource(ds_id: str):
-    sources = _load_data_sources()
-    for s in sources:
-        if s["id"] == ds_id:
-            return s
-    raise HTTPException(404, "Data source not found")
+    ds = repo_get(ds_id)
+    if not ds:
+        raise HTTPException(404, "Data source not found")
+    return ds
 
 
 @router.put("/{ds_id}")
 async def update_datasource(ds_id: str, data: DataSourceUpdate):
-    sources = _load_data_sources()
-    for s in sources:
-        if s["id"] == ds_id:
-            for k, v in data.model_dump(exclude_none=True).items():
-                s[k] = v
-            _save_data_sources(sources)
-            return s
-    raise HTTPException(404, "Data source not found")
+    ds = repo_update(ds_id, data.model_dump(exclude_none=True))
+    if not ds:
+        raise HTTPException(404, "Data source not found")
+    return ds
 
 
 @router.delete("/{ds_id}", status_code=204)
 async def delete_datasource(ds_id: str):
-    sources = _load_data_sources()
-    sources = [s for s in sources if s["id"] != ds_id]
-    _save_data_sources(sources)
+    repo_delete(ds_id)
 
 
 @router.post("/{ds_id}/test")
@@ -216,11 +195,10 @@ async def preview_bootstrap(ds_id: str, req: BootstrapRequest):
 
 
 def _get_ds(ds_id: str) -> dict:
-    sources = _load_data_sources()
-    for s in sources:
-        if s["id"] == ds_id:
-            return s
-    raise HTTPException(404, "Data source not found")
+    ds = repo_get(ds_id)
+    if not ds:
+        raise HTTPException(404, "Data source not found")
+    return ds
 
 
 def _write_properties(ds: dict, path: str):

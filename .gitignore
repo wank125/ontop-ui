@@ -7,6 +7,9 @@ venv/
 
 # Backend data (local state)
 backend/data/*.json
+backend/data/*.json.migrated
+backend/data/*.db
+backend/data/.encryption_key
 
 # Frontend
 frontend/node_modules/
