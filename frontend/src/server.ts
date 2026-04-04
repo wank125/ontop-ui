@@ -1,4 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { appendFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { parse } from 'url';
 import next from 'next';
 
@@ -7,6 +9,20 @@ const hostname = process.env.HOSTNAME || 'localhost';
 const port = parseInt(process.env.PORT || '5000', 10);
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const LOG_DIR = join(process.cwd(), '..', 'logs');
+const FRONTEND_LOG_FILE = join(LOG_DIR, 'frontend.log');
+
+mkdirSync(LOG_DIR, { recursive: true });
+
+function writeLog(level: 'INFO' | 'ERROR', message: string) {
+  const line = `${new Date().toISOString()} |${level.padEnd(6)}| frontend - ${message}`;
+  if (level === 'ERROR') {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
+  appendFileSync(FRONTEND_LOG_FILE, `${line}\n`, 'utf8');
+}
 
 // Create Next.js app
 const app = next({ dev, hostname, port });
@@ -23,8 +39,14 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 
 app.prepare().then(() => {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const started = Date.now();
+    const method = req.method || 'GET';
+    const path = req.url || '/';
     try {
       const parsedUrl = parse(req.url!, true);
+      const clientIp = req.socket.remoteAddress || '-';
+
+      writeLog('INFO', `REQ  ${method} ${parsedUrl.pathname || path} from=${clientIp}`);
 
       // Runtime API proxy — forwards /api/* to the backend
       if (parsedUrl.pathname?.startsWith('/api/')) {
@@ -53,24 +75,38 @@ app.prepare().then(() => {
         });
         const buf = Buffer.from(await backendRes.arrayBuffer());
         res.end(buf);
+        writeLog(
+          'INFO',
+          `RESP ${method} ${parsedUrl.pathname} status=${backendRes.status} duration=${Date.now() - started}ms proxy=${backendUrl}`,
+        );
         return;
       }
 
       await handle(req, res, parsedUrl);
+      writeLog(
+        'INFO',
+        `RESP ${method} ${parsedUrl.pathname || path} status=${res.statusCode} duration=${Date.now() - started}ms`,
+      );
     } catch (err) {
-      console.error('Error occurred handling', req.url, err);
+      writeLog(
+        'ERROR',
+        `ERR  ${method} ${path} duration=${Date.now() - started}ms message=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
       res.statusCode = 500;
       res.end('Internal server error');
     }
   });
 
   server.once('error', err => {
-    console.error(err);
+    writeLog('ERROR', `Server startup failure: ${err instanceof Error ? err.stack || err.message : String(err)}`);
     process.exit(1);
   });
   server.listen(port, () => {
-    console.log(
-      `> Server listening at http://${hostname}:${port} as ${
+    writeLog(
+      'INFO',
+      `Server listening at http://${hostname}:${port} as ${
         dev ? 'development' : process.env.COZE_PROJECT_ENV
       } (proxy -> ${BACKEND_URL})`,
     );

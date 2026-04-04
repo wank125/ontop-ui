@@ -1,10 +1,12 @@
 """Ontop UI - FastAPI Backend."""
 import sys
 import logging
+import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 # Add backend dir to Python path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -12,7 +14,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import FASTAPI_PORT
 from routers import datasources, mappings, sparql, ai_query, ontology
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s |%(levelname)-6s| %(name)s - %(message)s")
+LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+log_format = "%(asctime)s |%(levelname)-6s| %(name)s - %(message)s"
+logging.basicConfig(
+    level=logging.INFO,
+    format=log_format,
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_DIR / "backend.log", encoding="utf-8"),
+    ],
+    force=True,
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Ontop UI", version="0.1.0")
@@ -30,6 +44,36 @@ app.include_router(mappings.router, prefix="/api/v1")
 app.include_router(sparql.router, prefix="/api/v1")
 app.include_router(ai_query.router, prefix="/api/v1")
 app.include_router(ontology.router, prefix="/api/v1")
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next) -> Response:
+    started = time.perf_counter()
+    client_host = request.client.host if request.client else "-"
+    logger.info("REQ  %s %s from=%s", request.method, request.url.path, client_host)
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        logger.exception(
+            "ERR  %s %s from=%s duration=%.2fms",
+            request.method,
+            request.url.path,
+            client_host,
+            elapsed_ms,
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "RESP %s %s status=%s duration=%.2fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
 
 
 @app.get("/api/v1/health")
