@@ -109,7 +109,10 @@ export function SidebarNav() {
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)]">
       {/* Logo 区域 */}
-      <div className="flex h-16 items-center gap-3 border-b border-[var(--sidebar-border)] px-5">
+      <Link
+        href="/"
+        className="flex h-16 items-center gap-3 border-b border-[var(--sidebar-border)] px-5 transition-colors hover:bg-[var(--sidebar-accent)]"
+      >
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[oklch(0.70_0.15_280)] to-[oklch(0.65_0.18_200)]">
           <Zap className="h-5 w-5 text-white" />
         </div>
@@ -117,7 +120,7 @@ export function SidebarNav() {
           <h1 className="text-lg font-semibold text-[var(--sidebar-foreground)]">天织</h1>
           <p className="text-xs text-[var(--muted-foreground)]">语义平台</p>
         </div>
-      </div>
+      </Link>
 
       {/* 导航菜单 */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
