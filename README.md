@@ -45,7 +45,26 @@
 - 「合并到本体」：将 accepted 标注写入 active_ontology.ttl
 - Bootstrap 重跑不丢失已审核的人工标注
 
-### 8. AI 设置 `/settings`
+### 8. 业务词汇表 `/glossary` ⭐ 新增
+- 维护业务口语词（如"欠款""物业费"）→ 本体属性/类 URI 的显式映射
+- LLM 自动从已审核注释推导词汇，人工条目永不被覆盖
+- 全局词汇（ds_id=''）跨数据源共享，查询时自动合并
+- AI 查询时按问题关键词匹配 Top-12 词汇注入 SPARQL Prompt，消除 LLM 猜测属性名
+- 支持导出 / 导入 JSON，模糊搜索，按类型过滤
+
+### 9. 本体精化建议 `/refinement` ⭐ 新增
+- LLM 分析本体结构（类名、属性名、XSD 类型、层次关系），生成优先级分组建议
+- 支持 6 种建议类型：RENAME_CLASS / RENAME_PROPERTY / REFINE_TYPE / ADD_LABEL / ADD_SUBCLASS / MERGE_CLASS
+- 低风险类型（RENAME / REFINE_TYPE / ADD_LABEL）支持一键自动应用到 TTL，修改前自动备份 `.ttl.bak`
+- 高风险类型（ADD_SUBCLASS / MERGE_CLASS）给出人工操作指引（Turtle 片段）
+- 批量应用所有已接受+可自动建议
+
+### 10. 端点注册表（后台功能）
+- Bootstrap 完成后自动将本体/映射/属性文件路径写入 `endpoint_registry` 表
+- 支持 `PUT /api/v1/endpoint-registry/{ds_id}/activate` 切换激活数据源
+- 切换时文件同步到共享 active 目录 + 触发 Ontop reload（约 5-10s）
+
+### 11. AI 设置 `/settings`
 - 8 种 LLM Provider 选择（OpenAI / LM Studio / Ollama / DeepSeek / 智谱 / Azure / Anthropic / 自定义）
 - 自动拉取模型列表
 - 系统提示词编辑（支持模板变量）
