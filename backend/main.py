@@ -38,7 +38,29 @@ async def lifespan(app: FastAPI):
     init_db()
     migrate_json_to_sqlite()
     logger.info("Database ready.")
+
+    # Auto-start MCP server if enabled
+    try:
+        from repositories.publishing_repo import load_publishing_config
+        from services.mcp_server import start_mcp_server, mount_mcp_app
+        cfg = load_publishing_config()
+        if cfg.get("mcp_enabled"):
+            logger.info("MCP server auto-start enabled, launching...")
+            ok = await start_mcp_server()
+            if ok:
+                mount_mcp_app(app)
+                logger.info("MCP server mounted at /mcp")
+    except Exception as e:
+        logger.warning("Failed to auto-start MCP server: %s", e)
+
     yield
+
+    # Shutdown MCP server
+    try:
+        from services.mcp_server import stop_mcp_server
+        await stop_mcp_server()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="Ontop UI", version="0.1.0", lifespan=lifespan)
@@ -51,7 +73,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import datasources, mappings, sparql, ai_query, ontology, workbench
+from routers import datasources, mappings, sparql, ai_query, ontology, workbench, publishing
 
 app.include_router(datasources.router, prefix="/api/v1")
 app.include_router(mappings.router, prefix="/api/v1")
@@ -59,6 +81,7 @@ app.include_router(sparql.router, prefix="/api/v1")
 app.include_router(ai_query.router, prefix="/api/v1")
 app.include_router(ontology.router, prefix="/api/v1")
 app.include_router(workbench.router, prefix="/api/v1")
+app.include_router(publishing.router, prefix="/api/v1")
 
 
 @app.middleware("http")
