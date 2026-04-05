@@ -1,12 +1,52 @@
 """Parse and serialize Ontop .obda mapping files."""
 import re
-from typing import Optional
+
+import httpx
 
 from models.mapping import MappingContent, MappingRule
+from config import ONTOP_ENGINE_URL
 
 
 def parse_obda(content: str) -> MappingContent:
     """Parse .obda file content into structured data."""
+    parsed = _parse_obda_via_engine(content)
+    if parsed is not None:
+        return parsed
+    return _parse_obda_legacy(content)
+
+
+def _parse_obda_via_engine(content: str) -> MappingContent | None:
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(
+                f"{ONTOP_ENGINE_URL}/api/ontop/parse-mapping",
+                json={"mappingContent": content},
+            )
+            resp.raise_for_status()
+    except Exception:
+        return None
+
+    body = resp.json()
+    if not body.get("success"):
+        return None
+
+    mappings = [
+        MappingRule(
+            mapping_id=item.get("mappingId", ""),
+            target=item.get("target", ""),
+            source=item.get("source", ""),
+        )
+        for item in body.get("mappings", [])
+    ]
+    prefixes = {
+        str(prefix).rstrip(":"): str(uri)
+        for prefix, uri in (body.get("prefixes") or {}).items()
+    }
+    return MappingContent(prefixes=prefixes, mappings=mappings)
+
+
+def _parse_obda_legacy(content: str) -> MappingContent:
+    """Fallback parser kept for resilience when ontop-engine is unavailable."""
     prefixes = {}
     mappings = []
 
