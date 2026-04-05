@@ -14,17 +14,19 @@ import {
   Cog,
   Table,
   Share2,
+  Tags,
 } from 'lucide-react';
 
 const navItems = [
-  { title: '数据源管理', href: '/datasource', icon: Database, description: '管理数据库连接' },
-  { title: '数据库概览', href: '/db-schema', icon: Table, description: '浏览表结构' },
-  { title: 'SPARQL 查询', href: '/sparql', icon: Code2, description: '执行语义查询' },
-  { title: '映射编辑', href: '/mapping', icon: FileCode, description: '编辑 OBDA 映射' },
-  { title: 'AI 助手', href: '/ai-assistant', icon: Bot, description: '自然语言查询' },
-  { title: '本体可视化', href: '/ontology', icon: GitGraph, description: '可视化数据模型' },
-  { title: 'AI 设置', href: '/settings', icon: Settings, description: '模型与提示词配置' },
-  { title: '数据发布', href: '/publishing', icon: Share2, description: 'API/MCP/插件配置' },
+  { title: '数据源管理', href: '/datasource',   icon: Database, description: '管理数据库连接' },
+  { title: '数据库概览', href: '/db-schema',     icon: Table,    description: '浏览表结构' },
+  { title: 'SPARQL 查询', href: '/sparql',       icon: Code2,    description: '执行语义查询' },
+  { title: '映射编辑',   href: '/mapping',       icon: FileCode, description: '编辑 OBDA 映射' },
+  { title: 'AI 助手',    href: '/ai-assistant',  icon: Bot,      description: '自然语言查询' },
+  { title: '本体可视化', href: '/ontology',      icon: GitGraph, description: '可视化数据模型' },
+  { title: '语义标注',   href: '/annotations',   icon: Tags,     description: '审核 LLM 语义标注' },
+  { title: 'AI 设置',    href: '/settings',      icon: Settings, description: '模型与提示词配置' },
+  { title: '数据发布',   href: '/publishing',    icon: Share2,   description: 'API/MCP/插件配置' },
 ];
 
 export function SidebarNav() {

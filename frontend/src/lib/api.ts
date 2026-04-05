@@ -510,3 +510,87 @@ export const publishing = {
   getDatacard: () =>
     api<DataCard>('/publishing/datacard'),
 };
+
+// ── Semantic Annotations ─────────────────────────────────
+
+export type AnnotationStatus = 'pending' | 'accepted' | 'rejected';
+export type AnnotationSource = 'llm' | 'human';
+export type AnnotationKind  = 'class' | 'data_property' | 'object_property';
+
+export interface SemanticAnnotation {
+  id:          string;
+  ds_id:       string;
+  entity_uri:  string;
+  entity_kind: AnnotationKind;
+  lang:        string;
+  label:       string;
+  comment:     string;
+  source:      AnnotationSource;
+  status:      AnnotationStatus;
+  created_at:  string;
+  updated_at:  string | null;
+}
+
+export interface AnnotationStats {
+  pending:  number;
+  accepted: number;
+  rejected: number;
+  total:    number;
+}
+
+export interface AnnotationUpsert {
+  entity_uri:  string;
+  entity_kind: AnnotationKind;
+  lang:        string;
+  label?:      string;
+  comment?:    string;
+  source?:     AnnotationSource;
+}
+
+export const annotations = {
+  /** 列出指定数据源的注释，可按 status 或 entity_kind 过滤 */
+  list: (dsId: string, params?: { status?: AnnotationStatus; entity_kind?: AnnotationKind }) => {
+    const q = new URLSearchParams();
+    if (params?.status)      q.set('status', params.status);
+    if (params?.entity_kind) q.set('entity_kind', params.entity_kind);
+    const qs = q.toString() ? `?${q}` : '';
+    return api<SemanticAnnotation[]>(`/annotations/${dsId}${qs}`);
+  },
+
+  /** 各状态数量统计 */
+  stats: (dsId: string) =>
+    api<AnnotationStats>(`/annotations/${dsId}/stats`),
+
+  /** 手动新增/覆盖一条注释（source=human，直接 accepted） */
+  create: (dsId: string, body: AnnotationUpsert) =>
+    api<SemanticAnnotation>(`/annotations/${dsId}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** 更新单条注释的状态 */
+  updateStatus: (dsId: string, annId: string, status: AnnotationStatus) =>
+    api<SemanticAnnotation>(`/annotations/${dsId}/${annId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+
+  /** 删除单条注释 */
+  delete: (dsId: string, annId: string) =>
+    api<void>(`/annotations/${dsId}/${annId}`, { method: 'DELETE' }),
+
+  /** 批量更新状态（如"全部接受"） */
+  batchStatus: (dsId: string, ids: string[], status: AnnotationStatus) =>
+    api<{ updated: number; status: string }>(`/annotations/${dsId}/batch-status`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    }),
+
+  /** 手动触发将 accepted 注释合并到 active TTL */
+  merge: (dsId: string) =>
+    api<{ merged_entities: number; output_path: string; message: string }>(
+      `/annotations/${dsId}/merge`,
+      { method: 'POST' },
+    ),
+};
+
