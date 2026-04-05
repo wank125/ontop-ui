@@ -124,6 +124,36 @@ async def generate_sparql(system_prompt: str, question: str) -> str:
     return response.choices[0].message.content.strip()
 
 
+async def generate_corrected_sparql(
+    system_prompt: str,
+    question: str,
+    failed_sparql: str,
+    error_message: str,
+) -> str:
+    """让 LLM 根据错误信息自我修正上一次失败的 SPARQL。
+
+    把失败的 SPARQL 和 Ontop 返回的错误一起塞进对话上下文，
+    让 LLM 有机会识别并修正属性名错误、绑定变量遗漏等常见问题。
+    """
+    correction_prompt = (
+        f"以下 SPARQL 执行时报错，请修复后重新输出一条正确的 SPARQL，不要任何解释。\n\n"
+        f"失败的 SPARQL:\n```sparql\n{failed_sparql}\n```\n\n"
+        f"错误信息:\n{error_message[:500]}"
+    )
+    response = await _client.chat.completions.create(
+        model=_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": failed_sparql},
+            {"role": "user", "content": correction_prompt},
+        ],
+        temperature=_temperature,
+        max_tokens=_max_tokens,
+    )
+    return response.choices[0].message.content.strip()
+
+
 async def generate_answer(question: str, result: str) -> str:
     """Generate natural language answer from query results."""
     prompt = DEFAULT_ANSWER_PROMPT.format(question=question, result=result)
@@ -134,3 +164,4 @@ async def generate_answer(question: str, result: str) -> str:
         max_tokens=512,
     )
     return response.choices[0].message.content.strip()
+

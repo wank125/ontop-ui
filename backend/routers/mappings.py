@@ -66,14 +66,6 @@ async def get_mapping_content_by_query(path: str):
     content = file_path.read_text(encoding="utf-8")
     parsed = parse_obda(content)
     return parsed.model_dump()
-    """Read and parse an .obda file."""
-    file_path = Path(path)
-    if not file_path.exists():
-        raise HTTPException(404, f"File not found: {path}")
-
-    content = file_path.read_text(encoding="utf-8")
-    parsed = parse_obda(content)
-    return parsed.model_dump()
 
 
 @router.put("/{path:path}/content")
@@ -91,14 +83,6 @@ async def save_mapping_content(path: str, content: MappingContent):
 @router.put("/content")
 async def save_mapping_content_by_query(path: str, content: MappingContent):
     """Save modified .obda file via query parameter."""
-    file_path = Path(path)
-    if not file_path.exists():
-        raise HTTPException(404, f"File not found: {path}")
-
-    serialized = serialize_obda(content)
-    file_path.write_text(serialized, encoding="utf-8")
-    return {"success": True}
-    """Save modified .obda file."""
     file_path = Path(path)
     if not file_path.exists():
         raise HTTPException(404, f"File not found: {path}")
@@ -125,16 +109,6 @@ async def validate_mapping(path: str, req: ValidateRequest):
 @router.post("/validate")
 async def validate_mapping_by_query(path: str, req: ValidateRequest):
     """Validate a mapping file via query parameter."""
-    ontology_path = req.ontology_path or str(ONTOLOGY_FILE)
-    properties_path = req.properties_path or str(PROPERTIES_FILE)
-
-    success, output = await ontop_validate(
-        mapping_path=path,
-        ontology_path=ontology_path,
-        properties_path=properties_path,
-    )
-    return {"valid": success, "errors": [] if success else [output[:500]]}
-    """Validate a mapping file."""
     ontology_path = req.ontology_path or str(ONTOLOGY_FILE)
     properties_path = req.properties_path or str(PROPERTIES_FILE)
 

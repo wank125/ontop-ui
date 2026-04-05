@@ -10,7 +10,7 @@ from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 
 from models.mapping import MappingContent
-from services.llm_service import generate_sparql, generate_answer, build_sparql_prompt
+from services.llm_service import generate_sparql, generate_corrected_sparql, generate_answer, build_sparql_prompt
 from services.obda_parser import parse_obda
 from config import ONTOP_ENDPOINT_URL
 from services.active_endpoint_config import load_active_endpoint_config
@@ -239,34 +239,11 @@ def _normalize_generated_sparql(sparql: str, summary: dict[str, Any]) -> str:
 
 
 def _build_fallback_sparql(question: str, summary: dict[str, Any]) -> str | None:
-    cls_base = summary["prefixes"].get("cls", "")
-    class_props = summary.get("class_properties", {})
-    q = question.strip()
+    """尝试通过规则快速修复失败的 SPARQL。
 
-    if "国家" in q and any(keyword in q for keyword in ("有哪些", "哪些", "列出")) and "country" in class_props:
-        return (
-            f"PREFIX cls: <{cls_base}>\n"
-            "SELECT ?name WHERE {\n"
-            "  ?country a cls:country ;\n"
-            f"           <{cls_base}country#name> ?name .\n"
-            "}\n"
-            "ORDER BY ?name\n"
-            "LIMIT 50"
-        )
-
-    if "河流" in q and "最长" in q and "river" in class_props:
-        limit = 5 if "5" in q or "五" in q else 10
-        return (
-            f"PREFIX cls: <{cls_base}>\n"
-            "SELECT ?name ?length WHERE {\n"
-            "  ?river a cls:river ;\n"
-            f"         <{cls_base}river#name> ?name ;\n"
-            f"         <{cls_base}river#length> ?length .\n"
-            "}\n"
-            "ORDER BY DESC(?length)\n"
-            f"LIMIT {limit}"
-        )
-
+    当前策略：不做硬编码关键词匹配（会导致业务场景错误结果），
+    返回 None 表示无法自动修复，由上层转为 LLM 自我纠正流程处理。
+    """
     return None
 
 
@@ -653,64 +630,73 @@ async def ai_query(question: str):
             event_data["total_count"] = total_count
         yield {"event": "executed", "data": json.dumps(event_data)}
 
-        should_retry = (
-            ("Error:" in result_text or total_count == 0)
-            and summary.get("ontology_profile") == "bootstrap_flat"
-        )
-        fallback_sparql = _build_fallback_sparql(question, summary) if should_retry else None
+        # 当 SPARQL 执行失败或空结果时，触发 LLM 自我纠正（Self-Correction）
+        # 把失败的 SPARQL + Ontop 错误信息带入下一轮 LLM 对话，让模型自行修正
+        should_retry = "Error:" in result_text or total_count == 0
 
-        if fallback_sparql and fallback_sparql.strip() != sparql.strip():
-            fallback_sparql = _normalize_generated_sparql(fallback_sparql, summary)
-            yield {"event": "sparql", "data": json.dumps({"step": "sparql_fallback", "sparql": fallback_sparql})}
+        if should_retry:
+            error_hint = result_text if result_text.startswith("Error:") else f"查询返回了 0 条结果。原 SPARQL:\n{sparql}"
+            yield {"event": "step", "data": json.dumps({"step": "correcting", "message": "SPARQL 生成失败，正在尝试自动修正..."})}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            corrected_sparql = await generate_corrected_sparql(
+                system_prompt=prompt,
+                question=question,
+                failed_sparql=sparql,
+                error_message=error_hint,
+            )
+            corrected_sparql = _normalize_generated_sparql(corrected_sparql, summary)
+
+            if corrected_sparql.strip() != sparql.strip():
+                yield {"event": "sparql", "data": json.dumps({"step": "sparql_corrected", "sparql": corrected_sparql})}
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    try:
+                        resp = await client.get(
+                            f"{ONTOP_ENDPOINT_URL}/ontop/reformulate",
+                            params={"query": corrected_sparql},
+                        )
+                        if resp.status_code == 200:
+                            sql = resp.text
+                    except Exception:
+                        pass
+
+                    try:
+                        resp = await client.post(
+                            f"{ONTOP_ENDPOINT_URL}/sparql",
+                            data=corrected_sparql,
+                            headers={
+                                "Content-Type": "application/sparql-query",
+                                "Accept": "application/sparql-results+json",
+                            },
+                        )
+                        if resp.status_code == 200:
+                            result_text = resp.text
+                        else:
+                            result_text = f"Error: {resp.text[:200]}"
+                    except httpx.ConnectError:
+                        result_text = "Error: Ontop endpoint not running"
+
+                total_count = None
+                result_for_llm = result_text
                 try:
-                    resp = await client.get(
-                        f"{ONTOP_ENDPOINT_URL}/ontop/reformulate",
-                        params={"query": fallback_sparql},
-                    )
-                    if resp.status_code == 200:
-                        sql = resp.text
-                except Exception:
-                    pass
+                    parsed_result = json.loads(result_text)
+                    bindings = parsed_result.get("results", {}).get("bindings", [])
+                    total_count = len(bindings)
+                    if len(result_text) > MAX_RESULT_CHARS:
+                        for row in bindings:
+                            for cell in row.values():
+                                val = cell.get("value", "")
+                                if len(val) > 80:
+                                    cell["value"] = val[:80] + "..."
+                        result_for_llm = json.dumps(parsed_result, ensure_ascii=False)
+                except (json.JSONDecodeError, AttributeError):
+                    if len(result_for_llm) > MAX_RESULT_CHARS:
+                        result_for_llm = result_for_llm[:MAX_RESULT_CHARS]
 
-                try:
-                    resp = await client.post(
-                        f"{ONTOP_ENDPOINT_URL}/sparql",
-                        data=fallback_sparql,
-                        headers={
-                            "Content-Type": "application/sparql-query",
-                            "Accept": "application/sparql-results+json",
-                        },
-                    )
-                    if resp.status_code == 200:
-                        result_text = resp.text
-                    else:
-                        result_text = f"Error: {resp.text[:200]}"
-                except httpx.ConnectError:
-                    result_text = "Error: Ontop endpoint not running"
-
-            total_count = None
-            result_for_llm = result_text
-            try:
-                parsed = json.loads(result_text)
-                bindings = parsed.get("results", {}).get("bindings", [])
-                total_count = len(bindings)
-                if len(result_text) > MAX_RESULT_CHARS:
-                    for row in bindings:
-                        for cell in row.values():
-                            val = cell.get("value", "")
-                            if len(val) > 80:
-                                cell["value"] = val[:80] + "..."
-                    result_for_llm = json.dumps(parsed, ensure_ascii=False)
-            except (json.JSONDecodeError, AttributeError):
-                if len(result_for_llm) > MAX_RESULT_CHARS:
-                    result_for_llm = result_for_llm[:MAX_RESULT_CHARS]
-
-            fallback_event = {"step": "executed_fallback", "sql": sql, "results": result_text[:3000]}
-            if total_count is not None:
-                fallback_event["total_count"] = total_count
-            yield {"event": "executed", "data": json.dumps(fallback_event)}
+                corrected_event = {"step": "executed_corrected", "sql": sql, "results": result_text[:3000]}
+                if total_count is not None:
+                    corrected_event["total_count"] = total_count
+                yield {"event": "executed", "data": json.dumps(corrected_event)}
 
         answer = await generate_answer(question, result_for_llm)
         yield {"event": "answer", "data": json.dumps({"step": "answer", "answer": answer})}

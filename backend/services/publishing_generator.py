@@ -80,26 +80,42 @@ def _load_parsed_obda() -> tuple[dict, list]:
 
 
 def get_ontology_classes_summary() -> list[dict]:
-    """Extract class list from OBDA mappings."""
+    """Extract class list from OBDA mappings.
+
+    Each mapping rule belongs to exactly one class (identified by 'a <uri>').
+    Properties are bound only to that class, not broadcast to all classes.
+    """
     prefixes, mappings = _load_parsed_obda()
     classes = {}
     for m in mappings:
         target = m.target
-        # Extract class from 'a <uri>' pattern
+
+        # Determine the single class this mapping rule belongs to
         class_matches = re.findall(r'a\s+<([^>]+)>', target)
+        current_class_local: str | None = None
         for c in class_matches:
             local = c.rsplit("/", 1)[-1]
             if local not in classes:
-                classes[local] = {"name": local, "uri": c}
-        # Extract properties
-        prop_matches = re.findall(r'<([^>]+)>\s*\{([^}]+)\}', target)
-        for uri, col in prop_matches:
+                classes[local] = {"name": local, "uri": c, "properties": []}
+            # Take the first class match as the owner of this mapping rule
+            if current_class_local is None:
+                current_class_local = local
+
+        if current_class_local is None:
+            # No class found in this mapping rule — skip property binding
+            continue
+
+        # Extract property URIs in the form <uri> {column}
+        prop_matches = re.findall(r'<([^>]+)>\s*\{[^}]+\}', target)
+        for uri in prop_matches:
             if uri.startswith("http://www.w3.org/"):
                 continue
-            local_prop = uri.rsplit("/", 1)[-1]
-            for cls_name in classes:
-                if local_prop not in classes[cls_name].get("properties", []):
-                    classes[cls_name].setdefault("properties", []).append(local_prop)
+            # Support both /ClassName#propName and /propName URI styles
+            local_prop = uri.rsplit("#", 1)[-1] if "#" in uri else uri.rsplit("/", 1)[-1]
+            props = classes[current_class_local].setdefault("properties", [])
+            if local_prop not in props:
+                props.append(local_prop)
+
     return list(classes.values())
 
 
