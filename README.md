@@ -37,7 +37,15 @@
 - Tab 切换：关系图谱 / 本体定义列表
 - 缩放、拖拽交互
 
-### 7. AI 设置 `/settings`
+### 7. 语义标注 `/annotations` ⭐ 新增
+- Bootstrap 完成后，LLM 自动为每个类/属性生成语义标注（中英文 label + comment）
+- 审核界面：待审核 / 已接受 / 已拒绝 三 Tab 管理
+- 支持逐条接受/拒绝或批量操作
+- 人工编辑对话框（覆盖 LLM 标注，source=human，优先级最高）
+- 「合并到本体」：将 accepted 标注写入 active_ontology.ttl
+- Bootstrap 重跑不丢失已审核的人工标注
+
+### 8. AI 设置 `/settings`
 - 8 种 LLM Provider 选择（OpenAI / LM Studio / Ollama / DeepSeek / 智谱 / Azure / Anthropic / 自定义）
 - 自动拉取模型列表
 - 系统提示词编辑（支持模板变量）
@@ -262,6 +270,12 @@ pnpm dev --port 3001
 | `/api/v1/publishing/mcp/tools` | GET | 列出 MCP 工具 |
 | `/api/v1/publishing/mcp/config-snippet` | GET | 生成 MCP 配置片段 |
 | `/api/v1/publishing/skills/generate` | GET | 生成工具定义（OpenAI/Anthropic/OpenAPI） |
+| `/api/v1/annotations/{ds_id}` | GET | 列出语义注释（?status=pending\|accepted\|rejected） |
+| `/api/v1/annotations/{ds_id}/stats` | GET | 注释数量统计 |
+| `/api/v1/annotations/{ds_id}` | POST | 手动创建/覆盖注释（人工） |
+| `/api/v1/annotations/{ds_id}/{id}` | PUT | 更新注释状态 |
+| `/api/v1/annotations/{ds_id}/batch-status` | POST | 批量更新状态 |
+| `/api/v1/annotations/{ds_id}/merge` | POST | 合并 accepted 注释到 active TTL |
 
 ## 数据存储
 
@@ -270,7 +284,8 @@ pnpm dev --port 3001
 | 发布配置 | SQLite | API Key（加密）、CORS、MCP 开关、Skills 格式 |
 | AI 配置 | SQLite | Provider、模型、API Key |
 | 查询历史 | SQLite | SPARQL 查询记录 |
-| 本体文件 | 文件系统 | `.ttl` 文件 |
+| **语义注释** | **SQLite** | **LLM 生成的 label/comment（pending/accepted/rejected）** |
+| 本体文件 | 文件系统 | `.ttl` 文件（raw）及 active 合并版 |
 | 映射文件 | 文件系统 | `.obda` 文件 |
 | 连接属性 | 文件系统 | `.properties` 文件 |
 
@@ -279,12 +294,13 @@ pnpm dev --port 3001
 | 页面 | 路由 | 功能 |
 |------|------|------|
 | 仪表盘 | `/` | 统计概览、能力卡片、快速开始 |
-| 数据源管理 | `/datasource` | 数据库连接管理 |
+| 数据源管理 | `/datasource` | 数据库连接管理 + Bootstrap |
 | 数据库概览 | `/db-schema` | 表结构浏览 |
 | SPARQL 查询 | `/sparql` | 查询编辑与执行 |
 | 映射编辑 | `/mapping` | OBDA 映射管理 |
 | AI 助手 | `/ai-assistant` | 自然语言转 SPARQL |
 | 本体可视化 | `/ontology` | 关系图谱展示 |
+| **语义标注** | **`/annotations`** | **LLM 语义标注审核 + 合并（新增）** |
 | 数据发布 | `/publishing` | API/MCP/插件配置与工具定义生成 |
 | AI 设置 | `/settings` | 模型与提示词配置 |
 | 系统设置 | `/system` | 用户信息、服务状态、运行配置 |
