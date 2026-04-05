@@ -19,6 +19,7 @@ from services.bootstrap_service import (
     write_manifest,
 )
 from services.ontology_format import normalize_ontology_to_turtle
+from services.ontology_enrichment import enrich_ontology_labels
 from config import DATA_DIR
 from repositories.datasource_repo import (
     list_datasources as repo_list,
@@ -184,6 +185,11 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
         "properties_path": str(props_path),
     }
     manifest_path, selected_tables_path = write_manifest(version_dir, manifest)
+
+    # 异步触发 LLM 语义增强（后台执行，不阻塞响应）
+    # 为生成的 TTL 自动添加 rdfs:label/rdfs:comment，提升 AI 查询质量
+    import asyncio
+    asyncio.create_task(enrich_ontology_labels(onto_path))
 
     return {
         "version": version,

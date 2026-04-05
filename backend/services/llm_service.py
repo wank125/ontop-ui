@@ -45,6 +45,7 @@ def build_sparql_prompt(
     prefixes: dict[str, str],
     template: Optional[str] = None,
     class_properties: Optional[dict[str, list[str]]] = None,
+    class_labels: Optional[dict[str, str]] = None,
 ) -> str:
     """Build the SPARQL generation system prompt."""
     if template is None:
@@ -57,7 +58,9 @@ def build_sparql_prompt(
     if class_properties:
         lines = []
         for cls_name, props in sorted(class_properties.items()):
-            lines.append(f"  {cls_name}: {', '.join(props)}")
+            # 如果有语义标注，追加在类名后面的括号里
+            label_hint = f"  # {class_labels[cls_name]}" if class_labels and cls_name in class_labels else ""
+            lines.append(f"  {cls_name}:{label_hint} {', '.join(props)}")
         class_prop_str = "\n".join(lines)
 
     cls_base = prefixes.get("cls", "")

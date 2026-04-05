@@ -450,86 +450,129 @@ async def update_quick_questions(data: QuickQuestionsUpdate):
 
 @router.get("/ontology-summary")
 async def ontology_summary():
-    """Get ontology schema summary for prompt context."""
+    """Get ontology schema summary for SPARQL prompt context.
+
+    数据源优先级：
+      1. 激活的 TTL 本体文件（包含 rdfs:label/comment 等语义信息）——主要来源
+      2. 激活的 OBDA 映射文件——用于提取精确的类-属性归属关系和 SPARQL 前缀
+
+    两者合并后构建更丰富的 LLM 上下文，显著提升 SPARQL 生成质量。
+    """
     import re as re_mod
+    from services.ttl_parser import parse_ttl
 
     active_config = load_active_endpoint_config()
-    mapping_path = active_config["mapping_path"]
-    mapping_content = open(mapping_path, "r", encoding="utf-8").read()
-    parsed = parse_obda(mapping_content)
+    ontology_path = active_config.get("ontology_path", "")
+    mapping_path = active_config.get("mapping_path", "")
 
-    classes = set()
-    data_properties = set()
-    object_properties = set()
+    # ── Step 1: 解析 TTL，提取带语义标注的类/属性 ──────────────────
+    ttl_classes: dict[str, dict] = {}          # local_name -> {label_zh,label_en,comment_zh}
+    ttl_data_props: dict[str, dict] = {}
+    ttl_obj_props: dict[str, dict] = {}
+
+    if ontology_path and Path(ontology_path).exists():
+        try:
+            ttl_content = Path(ontology_path).read_text(encoding="utf-8")
+            parsed_ttl = parse_ttl(ttl_content)
+
+            for cls in parsed_ttl.classes:
+                ttl_classes[cls.local_name] = {
+                    "label_zh": cls.labels.zh,
+                    "label_en": cls.labels.en,
+                    "comment_zh": cls.comments.zh,
+                }
+            for dp in parsed_ttl.data_properties:
+                ttl_data_props[dp.local_name] = {
+                    "label_zh": dp.labels.zh,
+                    "label_en": dp.labels.en,
+                    "comment_zh": dp.comments.zh,
+                }
+            for op in parsed_ttl.object_properties:
+                ttl_obj_props[op.local_name] = {
+                    "label_zh": op.labels.zh,
+                    "label_en": op.labels.en,
+                }
+        except Exception as e:
+            logger.warning("ontology_summary: failed to parse TTL %s: %s", ontology_path, e)
+
+    # ── Step 2: 解析 OBDA，提取类-属性归属关系和前缀 ─────────────────
+    classes: set[str] = set(ttl_classes.keys())
+    data_properties: set[str] = set(ttl_data_props.keys())
+    object_properties: set[str] = set(ttl_obj_props.keys())
     all_uris: set[str] = set()
-    # class_name -> sorted list of property URIs belonging to that class
-    class_properties: dict[str, list[str]] = {}
+    class_properties: dict[str, list[str]] = {}   # class_name -> [property URI strings]
 
-    for m in parsed.mappings:
-        target = m.target
-        class_matches = re_mod.findall(r'a\s+<([^>]+)>', target)
-        for c in class_matches:
-            classes.add(c.split("/")[-1])
-            all_uris.add(c)
+    if mapping_path and Path(mapping_path).exists():
+        mapping_content = Path(mapping_path).read_text(encoding="utf-8")
+        parsed_obda = parse_obda(mapping_content)
+        namespaces: dict[str, str] = dict(parsed_obda.prefixes)
 
-        # Determine the class this mapping belongs to
-        current_class = class_matches[0].split("/")[-1] if class_matches else None
+        for m in parsed_obda.mappings:
+            target = m.target
+            class_matches = re_mod.findall(r'a\s+<([^>]+)>', target)
+            for c in class_matches:
+                local = c.split("/")[-1]
+                classes.add(local)
+                all_uris.add(c)
+            current_class = class_matches[0].split("/")[-1] if class_matches else None
 
-        # Extract property URIs: match <uri> {column}
-        prop_matches = re_mod.findall(r'<([^>]+)>\s*\{[^}]+\}', target)
-        for p in prop_matches:
-            if p.startswith("http://www.w3.org/") or p.startswith("https://www.w3.org/"):
-                continue
-            all_uris.add(p)
-            local_name = p.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
-            if local_name.startswith("ref-"):
+            prop_matches = re_mod.findall(r'<([^>]+)>\s*\{[^}]+\}', target)
+            for p in prop_matches:
+                if p.startswith("http://www.w3.org/") or p.startswith("https://www.w3.org/"):
+                    continue
+                all_uris.add(p)
+                local_name = p.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+                if local_name.startswith("ref-"):
+                    object_properties.add(local_name)
+                else:
+                    data_properties.add(local_name)
+                if current_class:
+                    class_properties.setdefault(current_class, set()).add(p)  # type: ignore[arg-type]
+
+            relation_matches = re_mod.findall(r'<([^>]+)>\s+<([^>]+)>\s+<([^>]+)>', target)
+            for _, pred_uri, obj_uri in relation_matches:
+                if pred_uri.startswith("http://www.w3.org/") or obj_uri.startswith("http://www.w3.org/"):
+                    continue
+                all_uris.add(pred_uri)
+                local_name = pred_uri.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
                 object_properties.add(local_name)
-            else:
-                data_properties.add(local_name)
-            # Track per-class properties
-            if current_class:
-                class_properties.setdefault(current_class, set()).add(p)
+                if current_class:
+                    class_properties.setdefault(current_class, set()).add(pred_uri)  # type: ignore[arg-type]
+    else:
+        # 仅有 TTL 时，构建空前缀和基础归属
+        namespaces = {}
 
-        relation_matches = re_mod.findall(r'<([^>]+)>\s+<([^>]+)>\s+<([^>]+)>', target)
-        for _, predicate_uri, object_uri in relation_matches:
-            if predicate_uri.startswith("http://www.w3.org/") or predicate_uri.startswith("https://www.w3.org/"):
-                continue
-            if object_uri.startswith("http://www.w3.org/") or object_uri.startswith("https://www.w3.org/"):
-                continue
-            all_uris.add(predicate_uri)
-            local_name = predicate_uri.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
-            object_properties.add(local_name)
-            if current_class:
-                class_properties.setdefault(current_class, set()).add(predicate_uri)
-
-    # Auto-detect ontology namespace
-    namespaces: dict[str, str] = dict(parsed.prefixes)
-    for uri in all_uris:
-        base = uri.rsplit("/", 1)[0] + "/"
-        if base.startswith("http://ontology.") or base.startswith("http://example.com/ontology"):
-            if "cls" not in namespaces:
-                namespaces["cls"] = base
-            break
-
-    if "cls" not in namespaces and classes:
+    # ── Step 3: 自动推断 cls namespace ────────────────────────────
+    if "cls" not in namespaces:
         for uri in all_uris:
-            if uri.endswith(next(iter(classes))):
-                base = uri.rsplit("/", 1)[0] + "/"
+            base = uri.rsplit("/", 1)[0] + "/"
+            if not any(base.startswith(std) for std in ["http://www.w3.org/", "http://purl.org/"]):
                 namespaces["cls"] = base
                 break
 
-    # Build per-class property summary with short names
     cls_base = namespaces.get("cls", "")
+
+    # ── Step 4: 构建 class_property_summary（含语义标注） ──────────
     class_property_summary: dict[str, list[str]] = {}
     for cls_name, prop_uris in sorted(class_properties.items()):
         short_props = []
         for puri in sorted(prop_uris):
-            # Get the part after cls base
-            if puri.startswith(cls_base):
-                short_props.append(puri[len(cls_base):])
-            else:
-                short_props.append(puri.rsplit("/", 1)[-1])
+            short = puri[len(cls_base):] if puri.startswith(cls_base) else puri.rsplit("/", 1)[-1]
+            short_props.append(short)
         class_property_summary[cls_name] = short_props
+
+    # ── Step 5: 构建带语义标注的类描述（用于 prompt 增强） ──────────
+    class_labels: dict[str, str] = {}
+    for cls_name, info in ttl_classes.items():
+        parts = []
+        if info.get("label_zh"):
+            parts.append(info["label_zh"])
+        if info.get("label_en"):
+            parts.append(info["label_en"])
+        if info.get("comment_zh"):
+            parts.append(f"({info['comment_zh']})")
+        if parts:
+            class_labels[cls_name] = " / ".join(parts)
 
     profile = _detect_ontology_profile(class_property_summary, object_properties)
 
@@ -539,8 +582,10 @@ async def ontology_summary():
         "object_properties": sorted(object_properties),
         "prefixes": namespaces,
         "class_properties": class_property_summary,
+        "class_labels": class_labels,           # 新增：含中英文标注，用于 prompt 富化
         "ontology_profile": profile,
     }
+
 
 
 # ── AI Query Pipeline ──────────────────────────────────
@@ -566,6 +611,7 @@ async def ai_query(question: str):
             prefixes=summary["prefixes"],
             template=custom_prompt,
             class_properties=summary.get("class_properties"),
+            class_labels=summary.get("class_labels"),   # 传入 TTL 语义标注，提升 LLM 理解准确率
         )
 
         sparql = await generate_sparql(prompt, question)
