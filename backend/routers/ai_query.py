@@ -472,9 +472,33 @@ async def ai_query(question: str):
             except httpx.ConnectError:
                 result_text = "Error: Ontop endpoint not running"
 
-        yield {"event": "executed", "data": json.dumps({"step": "executed", "sql": sql, "results": result_text[:2000]})}
+        # Smart truncation: parse JSON to preserve structure and count,
+        # only truncate individual cell values if total size exceeds limit.
+        MAX_RESULT_CHARS = 8000
+        result_for_llm = result_text
+        total_count = None
+        try:
+            parsed = json.loads(result_text)
+            bindings = parsed.get("results", {}).get("bindings", [])
+            total_count = len(bindings)
+            if len(result_text) > MAX_RESULT_CHARS:
+                # Truncate long cell values but keep all rows
+                for row in bindings:
+                    for cell in row.values():
+                        val = cell.get("value", "")
+                        if len(val) > 80:
+                            cell["value"] = val[:80] + "..."
+                result_for_llm = json.dumps(parsed, ensure_ascii=False)
+        except (json.JSONDecodeError, AttributeError):
+            if len(result_for_llm) > MAX_RESULT_CHARS:
+                result_for_llm = result_for_llm[:MAX_RESULT_CHARS]
 
-        answer = await generate_answer(question, result_text[:2000])
+        event_data = {"step": "executed", "sql": sql, "results": result_text[:3000]}
+        if total_count is not None:
+            event_data["total_count"] = total_count
+        yield {"event": "executed", "data": json.dumps(event_data)}
+
+        answer = await generate_answer(question, result_for_llm)
         yield {"event": "answer", "data": json.dumps({"step": "answer", "answer": answer})}
 
     return EventSourceResponse(event_generator())
