@@ -41,8 +41,8 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ../ontop-test/ontop-cli:/opt/ontop-cli:ro
-      - ../ontop-test/output:/opt/ontop-output
+      - ./docker/ontop-cli:/opt/ontop-cli:ro
+      - ./docker/backend/ontop-output:/opt/ontop-output
       - ./docker/backend/ontop-lvfa.properties:/opt/ontop-output/lvfa.properties:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

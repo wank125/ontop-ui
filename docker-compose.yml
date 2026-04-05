@@ -43,10 +43,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Mount Ontop CLI from host
-      - ../ontop-test/ontop-cli:/opt/ontop-cli:ro
+      # Mount Ontop CLI from project
+      - ./docker/ontop-cli:/opt/ontop-cli:ro
       # Mount ontop output files (read-write for bootstrap)
-      - ../ontop-test/output:/opt/ontop-output
+      - ./docker/backend/ontop-output:/opt/ontop-output
       # Override properties file with Docker-specific config
       - ./docker/backend/ontop.properties:/opt/ontop-output/retail.properties:ro
     extra_hosts:

@@ -11,9 +11,9 @@ DB_PATH = DATA_DIR / "ontop_ui.db"
 ENCRYPTION_KEY_PATH = DATA_DIR / ".encryption_key"
 
 # Ontop paths — support env override for Docker
-ONTOP_BASE = Path(os.environ.get("ONTOP_BASE", str(PROJECT_ROOT.parent.parent / "ontop-test")))
+ONTOP_BASE = Path(os.environ.get("ONTOP_BASE", str(PROJECT_ROOT.parent / "docker")))
 ONTOP_CLI = Path(os.environ.get("ONTOP_CLI", str(ONTOP_BASE / "ontop-cli" / "ontop")))
-ONTOP_OUTPUT = Path(os.environ.get("ONTOP_OUTPUT", str(ONTOP_BASE / "output")))
+ONTOP_OUTPUT = Path(os.environ.get("ONTOP_OUTPUT", str(ONTOP_BASE / "backend" / "ontop-output")))
 
 # Default Ontop endpoint config
 ONTOLOGY_FILE = Path(os.environ.get("ONTOLOGY_FILE", str(ONTOP_OUTPUT / "retail_ontology.ttl")))

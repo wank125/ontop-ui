@@ -169,8 +169,8 @@ pnpm dev --port 3001
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `ONTOP_CLI` | `../ontop-test/ontop-cli/ontop` | Ontop CLI 路径 |
-| `ONTOP_OUTPUT` | `../ontop-test/output` | 映射/本体文件目录 |
+| `ONTOP_CLI` | `./docker/ontop-cli/ontop` | Ontop CLI 路径 |
+| `ONTOP_OUTPUT` | `./docker/backend/ontop-output` | 映射/本体文件目录 |
 | `ONTOP_ENDPOINT_PORT` | `8080` | SPARQL 端点端口 |
 | `LLM_BASE_URL` | `http://localhost:1234/v1` | LLM API 地址 |
 | `LLM_MODEL` | `zai-org/glm-4.7-flash` | LLM 模型名 |
