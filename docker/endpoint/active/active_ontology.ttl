@@ -1,547 +1,176 @@
-@prefix : <http://example.com/lvfa/> .
+@prefix : <http://example.com/retail/> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xml: <http://www.w3.org/XML/1998/namespace> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@base <http://example.com/lvfa/> .
+@base <http://example.com/retail/> .
 
-<http://example.com/lvfa/> rdf:type owl:Ontology .
+<http://example.com/retail/> rdf:type owl:Ontology .
 
 #################################################################
 #    Object Properties
 #################################################################
 
-###  http://example.com/lvfa/account#ref-global_id
-<http://example.com/lvfa/account#ref-global_id> rdf:type owl:ObjectProperty .
+###  http://example.com/retail/dim_employee#ref-store_id
+<http://example.com/retail/dim_employee#ref-store_id> rdf:type owl:ObjectProperty .
 
 
-###  http://example.com/lvfa/account#ref-project_id
-<http://example.com/lvfa/account#ref-project_id> rdf:type owl:ObjectProperty .
+###  http://example.com/retail/fact_sales#ref-emp_id
+<http://example.com/retail/fact_sales#ref-emp_id> rdf:type owl:ObjectProperty .
 
 
-###  http://example.com/lvfa/bill#ref-subscr_id
-<http://example.com/lvfa/bill#ref-subscr_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/contract#ref-project_id
-<http://example.com/lvfa/contract#ref-project_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/cost_allocation#ref-project_id
-<http://example.com/lvfa/cost_allocation#ref-project_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/meter#ref-space_id
-<http://example.com/lvfa/meter#ref-space_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/parking_space#ref-project_id
-<http://example.com/lvfa/parking_space#ref-project_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/payment#ref-bill_id
-<http://example.com/lvfa/payment#ref-bill_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/person#ref-project_id
-<http://example.com/lvfa/person#ref-project_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/space_unit#ref-project_id
-<http://example.com/lvfa/space_unit#ref-project_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/subscription#ref-account_id
-<http://example.com/lvfa/subscription#ref-account_id> rdf:type owl:ObjectProperty .
-
-
-###  http://example.com/lvfa/work_order#ref-project_id
-<http://example.com/lvfa/work_order#ref-project_id> rdf:type owl:ObjectProperty .
+###  http://example.com/retail/fact_sales#ref-store_id
+<http://example.com/retail/fact_sales#ref-store_id> rdf:type owl:ObjectProperty .
 
 
 #################################################################
 #    Data properties
 #################################################################
 
-###  http://example.com/lvfa/account#account_id
-<http://example.com/lvfa/account#account_id> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_employee#emp_id
+<http://example.com/retail/dim_employee#emp_id> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/account#account_status
-<http://example.com/lvfa/account#account_status> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_employee#name
+<http://example.com/retail/dim_employee#name> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/account#balance
-<http://example.com/lvfa/account#balance> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_employee#role
+<http://example.com/retail/dim_employee#role> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/account#global_id
-<http://example.com/lvfa/account#global_id> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_employee#store_id
+<http://example.com/retail/dim_employee#store_id> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/account#project_id
-<http://example.com/lvfa/account#project_id> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_store#name
+<http://example.com/retail/dim_store#name> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#amount_balance
-<http://example.com/lvfa/bill#amount_balance> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_store#region
+<http://example.com/retail/dim_store#region> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#amount_due
-<http://example.com/lvfa/bill#amount_due> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/dim_store#store_id
+<http://example.com/retail/dim_store#store_id> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#amount_paid
-<http://example.com/lvfa/bill#amount_paid> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/fact_sales#amount
+<http://example.com/retail/fact_sales#amount> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#bill_id
-<http://example.com/lvfa/bill#bill_id> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/fact_sales#emp_id
+<http://example.com/retail/fact_sales#emp_id> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#bill_status
-<http://example.com/lvfa/bill#bill_status> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/fact_sales#sale_date
+<http://example.com/retail/fact_sales#sale_date> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#period
-<http://example.com/lvfa/bill#period> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/fact_sales#sale_id
+<http://example.com/retail/fact_sales#sale_id> rdf:type owl:DatatypeProperty .
 
 
-###  http://example.com/lvfa/bill#source_flag
-<http://example.com/lvfa/bill#source_flag> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/bill#subscr_id
-<http://example.com/lvfa/bill#subscr_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#accounting_mode
-<http://example.com/lvfa/business_class#accounting_mode> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#bc_id
-<http://example.com/lvfa/business_class#bc_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#billing_base_type
-<http://example.com/lvfa/business_class#billing_base_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#settlement_anchor
-<http://example.com/lvfa/business_class#settlement_anchor> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#settlement_frequency
-<http://example.com/lvfa/business_class#settlement_frequency> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#tax_rate
-<http://example.com/lvfa/business_class#tax_rate> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/business_class#unit_price
-<http://example.com/lvfa/business_class#unit_price> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/contract#contract_end
-<http://example.com/lvfa/contract#contract_end> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/contract#contract_id
-<http://example.com/lvfa/contract#contract_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/contract#contract_start
-<http://example.com/lvfa/contract#contract_start> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/contract#project_id
-<http://example.com/lvfa/contract#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/cost_allocation#alloc_amount
-<http://example.com/lvfa/cost_allocation#alloc_amount> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/cost_allocation#alloc_id
-<http://example.com/lvfa/cost_allocation#alloc_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/cost_allocation#alloc_period
-<http://example.com/lvfa/cost_allocation#alloc_period> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/cost_allocation#cost_type
-<http://example.com/lvfa/cost_allocation#cost_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/cost_allocation#project_id
-<http://example.com/lvfa/cost_allocation#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/customer#customer_status
-<http://example.com/lvfa/customer#customer_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/customer#global_id
-<http://example.com/lvfa/customer#global_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/customer#id_number
-<http://example.com/lvfa/customer#id_number> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/customer#legal_name
-<http://example.com/lvfa/customer#legal_name> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_payment#bill_id
-<http://example.com/lvfa/hist_payment#bill_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_payment#match_status
-<http://example.com/lvfa/hist_payment#match_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_payment#pay_amount
-<http://example.com/lvfa/hist_payment#pay_amount> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_payment#pay_channel
-<http://example.com/lvfa/hist_payment#pay_channel> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_payment#pay_id
-<http://example.com/lvfa/hist_payment#pay_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_payment#pay_time
-<http://example.com/lvfa/hist_payment#pay_time> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_work_order#bill_id
-<http://example.com/lvfa/hist_work_order#bill_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_work_order#order_id
-<http://example.com/lvfa/hist_work_order#order_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_work_order#order_type
-<http://example.com/lvfa/hist_work_order#order_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_work_order#project_id
-<http://example.com/lvfa/hist_work_order#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/hist_work_order#service_fee
-<http://example.com/lvfa/hist_work_order#service_fee> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/meter#meter_id
-<http://example.com/lvfa/meter#meter_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/meter#meter_type
-<http://example.com/lvfa/meter#meter_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/meter#space_id
-<http://example.com/lvfa/meter#space_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/parking_space#parking_id
-<http://example.com/lvfa/parking_space#parking_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/parking_space#parking_type
-<http://example.com/lvfa/parking_space#parking_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/parking_space#project_id
-<http://example.com/lvfa/parking_space#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/payment#bill_id
-<http://example.com/lvfa/payment#bill_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/payment#match_status
-<http://example.com/lvfa/payment#match_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/payment#pay_amount
-<http://example.com/lvfa/payment#pay_amount> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/payment#pay_channel
-<http://example.com/lvfa/payment#pay_channel> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/payment#pay_id
-<http://example.com/lvfa/payment#pay_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/payment#pay_time
-<http://example.com/lvfa/payment#pay_time> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/person#person_id
-<http://example.com/lvfa/person#person_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/person#person_name
-<http://example.com/lvfa/person#person_name> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/person#project_id
-<http://example.com/lvfa/person#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/person#work_type
-<http://example.com/lvfa/person#work_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/property_project#project_id
-<http://example.com/lvfa/property_project#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/property_project#project_name
-<http://example.com/lvfa/property_project#project_name> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/property_project#project_status
-<http://example.com/lvfa/property_project#project_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/property_project#region
-<http://example.com/lvfa/property_project#region> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/space_unit#billing_area
-<http://example.com/lvfa/space_unit#billing_area> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/space_unit#building_area
-<http://example.com/lvfa/space_unit#building_area> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/space_unit#project_id
-<http://example.com/lvfa/space_unit#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/space_unit#space_id
-<http://example.com/lvfa/space_unit#space_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#account_id
-<http://example.com/lvfa/subscription#account_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#bc_id
-<http://example.com/lvfa/subscription#bc_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#contract_id
-<http://example.com/lvfa/subscription#contract_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#parking_id
-<http://example.com/lvfa/subscription#parking_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#space_id
-<http://example.com/lvfa/subscription#space_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#subscr_end
-<http://example.com/lvfa/subscription#subscr_end> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#subscr_id
-<http://example.com/lvfa/subscription#subscr_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#subscr_start
-<http://example.com/lvfa/subscription#subscr_start> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/subscription#subscr_status
-<http://example.com/lvfa/subscription#subscr_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#amount_balance
-<http://example.com/lvfa/tmp_export#amount_balance> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#amount_due
-<http://example.com/lvfa/tmp_export#amount_due> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#amount_paid
-<http://example.com/lvfa/tmp_export#amount_paid> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#bill_id
-<http://example.com/lvfa/tmp_export#bill_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#bill_status
-<http://example.com/lvfa/tmp_export#bill_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#period
-<http://example.com/lvfa/tmp_export#period> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#source_flag
-<http://example.com/lvfa/tmp_export#source_flag> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_export#subscr_id
-<http://example.com/lvfa/tmp_export#subscr_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_import#account_id
-<http://example.com/lvfa/tmp_import#account_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_import#account_status
-<http://example.com/lvfa/tmp_import#account_status> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_import#balance
-<http://example.com/lvfa/tmp_import#balance> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_import#global_id
-<http://example.com/lvfa/tmp_import#global_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_import#project_id
-<http://example.com/lvfa/tmp_import#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_transform#bill_id
-<http://example.com/lvfa/tmp_transform#bill_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_transform#order_id
-<http://example.com/lvfa/tmp_transform#order_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_transform#order_type
-<http://example.com/lvfa/tmp_transform#order_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_transform#project_id
-<http://example.com/lvfa/tmp_transform#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/tmp_transform#service_fee
-<http://example.com/lvfa/tmp_transform#service_fee> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/work_order#bill_id
-<http://example.com/lvfa/work_order#bill_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/work_order#order_id
-<http://example.com/lvfa/work_order#order_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/work_order#order_type
-<http://example.com/lvfa/work_order#order_type> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/work_order#project_id
-<http://example.com/lvfa/work_order#project_id> rdf:type owl:DatatypeProperty .
-
-
-###  http://example.com/lvfa/work_order#service_fee
-<http://example.com/lvfa/work_order#service_fee> rdf:type owl:DatatypeProperty .
+###  http://example.com/retail/fact_sales#store_id
+<http://example.com/retail/fact_sales#store_id> rdf:type owl:DatatypeProperty .
 
 
 #################################################################
 #    Classes
 #################################################################
 
-###  http://example.com/lvfa/account
-:account rdf:type owl:Class .
+###  http://example.com/retail/dim_employee
+:dim_employee rdf:type owl:Class .
 
 
-###  http://example.com/lvfa/bill
-:bill rdf:type owl:Class .
+###  http://example.com/retail/dim_store
+:dim_store rdf:type owl:Class .
 
 
-###  http://example.com/lvfa/business_class
-:business_class rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/contract
-:contract rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/cost_allocation
-:cost_allocation rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/customer
-:customer rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/hist_payment
-:hist_payment rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/hist_work_order
-:hist_work_order rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/meter
-:meter rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/parking_space
-:parking_space rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/payment
-:payment rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/person
-:person rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/property_project
-:property_project rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/space_unit
-:space_unit rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/subscription
-:subscription rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/tmp_export
-:tmp_export rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/tmp_import
-:tmp_import rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/tmp_transform
-:tmp_transform rdf:type owl:Class .
-
-
-###  http://example.com/lvfa/work_order
-:work_order rdf:type owl:Class .
+###  http://example.com/retail/fact_sales
+:fact_sales rdf:type owl:Class .
 
 
 ###  Generated by the OWL API (version 5.5.1) https://github.com/owlcs/owlapi/
+
+# ── Auto-generated semantic labels (ontology_enrichment) ──
+
+
+:dim_employee
+    rdfs:label "员工维度"@zh ;
+    rdfs:label "Employee Dimension"@en ;
+    rdfs:comment "记录员工基本信息，包含ID、姓名、角色等属性。"@zh ;
+    rdfs:comment "Records employee basic information including ID, name, and role."@en .
+
+:dim_store
+    rdfs:label "门店维度"@zh ;
+    rdfs:label "Store Dimension"@en ;
+    rdfs:comment "记录门店基本信息，包含ID、所属区域等属性。"@zh ;
+    rdfs:comment "Records store basic information including ID and region."@en .
+
+:fact_sales
+    rdfs:label "销售事实表"@zh ;
+    rdfs:label "Sales Fact Table"@en ;
+    rdfs:comment "记录销售交易明细，包含销售ID、金额、日期等指标。"@zh ;
+    rdfs:comment "Records sales transaction details including sale ID, amount, and date."@en .
+
+:emp_id
+    rdfs:label "员工ID"@zh ;
+    rdfs:label "Employee ID"@en ;
+    rdfs:comment "员工的唯一标识符。"@zh ;
+    rdfs:comment "Unique identifier for the employee."@en .
+
+:name
+    rdfs:label "姓名"@zh ;
+    rdfs:label "Name"@en ;
+    rdfs:comment "员工或门店的名称。"@zh ;
+    rdfs:comment "The name of the employee or store."@en .
+
+:role
+    rdfs:label "角色"@zh ;
+    rdfs:label "Role"@en ;
+    rdfs:comment "员工在组织中的职位或职能。"@zh ;
+    rdfs:comment "The position or function of the employee within the organization."@en .
+
+:store_id
+    rdfs:label "门店ID"@zh ;
+    rdfs:label "Store ID"@en ;
+    rdfs:comment "门店的唯一标识符。"@zh ;
+    rdfs:comment "Unique identifier for the store."@en .
+
+:region
+    rdfs:label "区域"@zh ;
+    rdfs:label "Region"@en ;
+    rdfs:comment "门店所属的地理或业务区域。"@zh ;
+    rdfs:comment "The geographic or business region where the store is located."@en .
+
+:amount
+    rdfs:label "金额"@zh ;
+    rdfs:label "Amount"@en ;
+    rdfs:comment "销售交易的总金额。"@zh ;
+    rdfs:comment "The total amount of the sales transaction."@en .
+
+:sale_date
+    rdfs:label "销售日期"@zh ;
+    rdfs:label "Sale Date"@en ;
+    rdfs:comment "销售交易发生的日期。"@zh ;
+    rdfs:comment "The date when the sales transaction occurred."@en .
+
+:sale_id
+    rdfs:label "销售ID"@zh ;
+    rdfs:label "Sale ID"@en ;
+    rdfs:comment "销售交易的唯一标识符。"@zh ;
+    rdfs:comment "Unique identifier for the sales transaction."@en .
+
+:ref-store_id
+    rdfs:label "关联门店ID"@zh ;
+    rdfs:label "Ref Store ID"@en ;
+    rdfs:comment "指向门店维度的外键，用于关联销售与门店。"@zh ;
+    rdfs:comment "Foreign key pointing to the store dimension for linking sales to stores."@en .
+
+:ref-emp_id
+    rdfs:label "关联员工ID"@zh ;
+    rdfs:label "Ref Employee ID"@en ;
+    rdfs:comment "指向员工维度的外键，用于关联销售与员工。"@zh ;
+    rdfs:comment "Foreign key pointing to the employee dimension for linking sales to employees."@en .
