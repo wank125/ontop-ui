@@ -43,7 +43,12 @@
 - 系统提示词编辑（支持模板变量）
 - 快捷问题管理
 
-### 8. 系统设置 `/system`
+### 8. 数据发布 `/publishing`
+- **API 接入** — SPARQL 端点健康检查、API Key 生成/管理、CORS 跨域配置
+- **MCP 服务** — 内置 MCP Server 一键启停（Streamable HTTP 传输）、可用工具列表（从本体自动推导）、目标平台配置片段生成（Claude Desktop / Cursor / Windsurf）
+- **插件/Skills** — 四种格式工具定义一键生成与预览：OpenAI Function Calling、Anthropic Tool Use、OpenAPI 3.0、Generic JSON Schema
+
+### 9. 系统设置 `/system`
 - 用户信息展示
 - 后端服务健康检查
 - Ontop 端点运行状态
@@ -56,6 +61,7 @@
 | 前端 | Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui |
 | 后端 | Python FastAPI + httpx + OpenAI SDK + SQLite |
 | 引擎 | Ontop 5.5.0 CLI + SPARQL Endpoint |
+| MCP | Model Context Protocol SDK (Python mcp>=1.0.0) |
 | LLM | OpenAI 兼容 API（LM Studio / Ollama / DeepSeek 等） |
 | 数据库 | PostgreSQL 16 (Docker) |
 | 部署 | Docker Compose，pnpm 构建 |
@@ -73,14 +79,17 @@ ontop-ui/
 │   │   ├── mappings.py         # 映射文件读写、验证、端点重启
 │   │   ├── sparql.py           # SPARQL 查询代理 & SQL 重写
 │   │   ├── ai_query.py         # AI 自然语言查询（SSE 流式）
-│   │   └── ontology.py         # 本体文件解析
+│   │   ├── ontology.py         # 本体文件解析
+│   │   └── publishing.py       # 数据发布（API/MCP/Skills 配置）
 │   ├── services/
 │   │   ├── ontop_cli.py        # Ontop CLI 子进程封装
 │   │   ├── ontop_endpoint.py   # SPARQL 端点进程管理
 │   │   ├── obda_parser.py      # .obda 文件解析/序列化
 │   │   ├── ttl_parser.py       # .ttl 本体文件解析
 │   │   ├── bootstrap_service.py # 自动 Bootstrap 服务
-│   │   └── llm_service.py      # LLM 调用服务
+│   │   ├── llm_service.py      # LLM 调用服务
+│   │   ├── mcp_server.py       # MCP Server 生命周期管理
+│   │   └── publishing_generator.py # 工具定义生成（OpenAI/Anthropic/OpenAPI）
 │   ├── models/                 # Pydantic 数据模型
 │   ├── repositories/           # 数据访问层
 │   └── data/                   # SQLite 数据库 & 加密密钥（gitignore）
@@ -94,6 +103,7 @@ ontop-ui/
 │   │   │   ├── mapping/        # 映射编辑
 │   │   │   ├── ai-assistant/   # AI 助手
 │   │   │   ├── ontology/       # 本体可视化
+│   │   │   ├── publishing/     # 数据发布（API/MCP/Skills）
 │   │   │   ├── settings/       # AI 设置
 │   │   │   └── system/         # 系统设置
 │   │   ├── components/         # 共享组件
@@ -203,12 +213,21 @@ pnpm dev --port 3001
 | `/api/v1/ai/quick-questions` | GET/PUT | 快捷问题 |
 | `/api/v1/ai/discover-models` | POST | 自动发现可用模型 |
 | `/api/v1/ontology/parse` | POST | 解析本体文件 |
+| `/api/v1/publishing/config` | GET/PUT | 发布配置（API Key/CORS/MCP 开关） |
+| `/api/v1/publishing/api/status` | GET | SPARQL 端点健康检查 |
+| `/api/v1/publishing/api/generate-key` | POST | 生成 API Key |
+| `/api/v1/publishing/mcp/status` | GET | MCP 服务状态 |
+| `/api/v1/publishing/mcp/start` | POST | 启动 MCP Server |
+| `/api/v1/publishing/mcp/stop` | POST | 停止 MCP Server |
+| `/api/v1/publishing/mcp/tools` | GET | 列出 MCP 工具 |
+| `/api/v1/publishing/mcp/config-snippet` | GET | 生成 MCP 配置片段 |
+| `/api/v1/publishing/skills/generate` | GET | 生成工具定义（OpenAI/Anthropic/OpenAPI） |
 
 ## 数据存储
 
 | 数据类型 | 存储方式 | 说明 |
 |---------|---------|------|
-| 数据源配置 | SQLite | 加密存储数据库密码（Fernet） |
+| 发布配置 | SQLite | API Key（加密）、CORS、MCP 开关、Skills 格式 |
 | AI 配置 | SQLite | Provider、模型、API Key |
 | 查询历史 | SQLite | SPARQL 查询记录 |
 | 本体文件 | 文件系统 | `.ttl` 文件 |
@@ -226,6 +245,7 @@ pnpm dev --port 3001
 | 映射编辑 | `/mapping` | OBDA 映射管理 |
 | AI 助手 | `/ai-assistant` | 自然语言转 SPARQL |
 | 本体可视化 | `/ontology` | 关系图谱展示 |
+| 数据发布 | `/publishing` | API/MCP/插件配置与工具定义生成 |
 | AI 设置 | `/settings` | 模型与提示词配置 |
 | 系统设置 | `/system` | 用户信息、服务状态、运行配置 |
 
