@@ -219,6 +219,12 @@ export default function DataSourcePage() {
   const [schemaTreeSearch, setSchemaTreeSearch] = useState('');
   const [openSchemas, setOpenSchemas] = useState<Set<string>>(new Set());
   const [bootstrapMode, setBootstrapMode] = useState<'full' | 'partial'>('full');
+  const updateNewDataSource = (
+    field: 'name' | 'jdbcUrl' | 'username' | 'password' | 'driver',
+    value: string
+  ) => {
+    setNewDataSource((current) => ({ ...current, [field]: value }));
+  };
 
   const loadSources = async () => {
     setLoading(true);
@@ -539,13 +545,22 @@ export default function DataSourcePage() {
                 <DialogHeader>
                   <DialogTitle>添加数据源</DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <form
+                  className="grid gap-4 py-4"
+                  autoComplete="off"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleAddDataSource();
+                  }}
+                >
                   <div className="grid gap-2">
                     <Label htmlFor="name">数据源名称</Label>
                     <Input
                       id="name"
+                      name="datasource-name"
+                      autoComplete="off"
                       value={newDataSource.name}
-                      onChange={(event) => setNewDataSource({ ...newDataSource, name: event.target.value })}
+                      onChange={(event) => updateNewDataSource('name', event.target.value)}
                       placeholder="例如: Retail PostgreSQL"
                     />
                   </div>
@@ -553,7 +568,7 @@ export default function DataSourcePage() {
                     <Label htmlFor="driver">数据库类型</Label>
                     <Select
                       value={newDataSource.driver}
-                      onValueChange={(value) => setNewDataSource({ ...newDataSource, driver: value })}
+                      onValueChange={(value) => updateNewDataSource('driver', value)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="选择数据库类型" />
@@ -571,8 +586,10 @@ export default function DataSourcePage() {
                     <Label htmlFor="jdbcUrl">JDBC URL</Label>
                     <Input
                       id="jdbcUrl"
+                      name="datasource-jdbc-url"
+                      autoComplete="off"
                       value={newDataSource.jdbcUrl}
-                      onChange={(event) => setNewDataSource({ ...newDataSource, jdbcUrl: event.target.value })}
+                      onChange={(event) => updateNewDataSource('jdbcUrl', event.target.value)}
                       placeholder="jdbc:postgresql://localhost:5432/mydb"
                     />
                   </div>
@@ -581,21 +598,25 @@ export default function DataSourcePage() {
                       <Label htmlFor="username">用户名</Label>
                       <Input
                         id="username"
+                        name="datasource-username"
+                        autoComplete="username"
                         value={newDataSource.username}
-                        onChange={(event) => setNewDataSource({ ...newDataSource, username: event.target.value })}
+                        onChange={(event) => updateNewDataSource('username', event.target.value)}
                       />
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="password">密码</Label>
                       <Input
                         id="password"
+                        name="datasource-password"
+                        autoComplete="new-password"
                         type="password"
                         value={newDataSource.password}
-                        onChange={(event) => setNewDataSource({ ...newDataSource, password: event.target.value })}
+                        onChange={(event) => updateNewDataSource('password', event.target.value)}
                       />
                     </div>
                   </div>
-                </div>
+                </form>
                 <div className="flex justify-end gap-3">
                   <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                     取消

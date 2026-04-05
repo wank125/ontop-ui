@@ -121,9 +121,10 @@ async def health():
 
 @app.get("/api/v1/config")
 async def get_config():
-    from config import ONTOP_CLI, ONTOP_ENDPOINT_URL, LLM_BASE_URL, LLM_MODEL
+    from config import ONTOP_ENGINE_URL, ONTOP_ENDPOINT_URL, LLM_BASE_URL, LLM_MODEL
     return {
-        "ontop_cli": str(ONTOP_CLI),
+        "ontop_cli": "managed-by-services",
+        "ontop_engine_url": ONTOP_ENGINE_URL,
         "ontop_endpoint_url": ONTOP_ENDPOINT_URL,
         "llm_base_url": LLM_BASE_URL,
         "llm_model": LLM_MODEL,

@@ -23,6 +23,18 @@ PROPERTIES_FILE = Path(os.environ.get("PROPERTIES_FILE", str(ONTOP_OUTPUT / "ret
 # Ontop endpoint
 ONTOP_ENDPOINT_URL = os.environ.get("ONTOP_ENDPOINT_URL", "http://localhost:8080")
 ONTOP_ENDPOINT_PORT = int(os.environ.get("ONTOP_ENDPOINT_PORT", "8080"))
+ONTOP_ENDPOINT_ADMIN_URL = os.environ.get("ONTOP_ENDPOINT_ADMIN_URL", ONTOP_ENDPOINT_URL)
+ONTOP_ENDPOINT_ACTIVE_DIR = Path(os.environ.get("ONTOP_ENDPOINT_ACTIVE_DIR", "/opt/ontop-endpoint/active"))
+ONTOP_ENDPOINT_ACTIVE_ONTOLOGY_FILE = Path(
+    os.environ.get("ONTOP_ENDPOINT_ACTIVE_ONTOLOGY_FILE", str(ONTOP_ENDPOINT_ACTIVE_DIR / "active_ontology.ttl"))
+)
+ONTOP_ENDPOINT_ACTIVE_MAPPING_FILE = Path(
+    os.environ.get("ONTOP_ENDPOINT_ACTIVE_MAPPING_FILE", str(ONTOP_ENDPOINT_ACTIVE_DIR / "active_mapping.obda"))
+)
+ONTOP_ENDPOINT_ACTIVE_PROPERTIES_FILE = Path(
+    os.environ.get("ONTOP_ENDPOINT_ACTIVE_PROPERTIES_FILE", str(ONTOP_ENDPOINT_ACTIVE_DIR / "active.properties"))
+)
+ONTOP_ENGINE_URL = os.environ.get("ONTOP_ENGINE_URL", "http://localhost:8081")
 
 # FastAPI
 FASTAPI_PORT = int(os.environ.get("FASTAPI_PORT", "8000"))
