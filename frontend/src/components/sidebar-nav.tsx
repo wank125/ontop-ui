@@ -13,6 +13,7 @@ import {
   Zap,
   Cog,
   Table,
+  Share2,
 } from 'lucide-react';
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { title: 'AI 助手', href: '/ai-assistant', icon: Bot, description: '自然语言查询' },
   { title: '本体可视化', href: '/ontology', icon: GitGraph, description: '可视化数据模型' },
   { title: 'AI 设置', href: '/settings', icon: Settings, description: '模型与提示词配置' },
+  { title: '数据发布', href: '/publishing', icon: Share2, description: 'API/MCP/插件配置' },
 ];
 
 export function SidebarNav() {

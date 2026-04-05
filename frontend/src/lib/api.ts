@@ -409,3 +409,49 @@ export const ai = {
       body: JSON.stringify({ questions }),
     }),
 };
+
+// ── Publishing ───────────────────────────────────────
+
+export interface PublishingConfig {
+  id: string;
+  api_enabled: boolean;
+  api_key: string;
+  cors_origins: string;
+  mcp_enabled: boolean;
+  mcp_port: number;
+  mcp_selected_tools: string[];
+  skills_enabled: boolean;
+  skills_selected_formats: string[];
+}
+
+export interface McpStatus {
+  running: boolean;
+  tools: string[];
+  transport: string;
+}
+
+export const publishing = {
+  getConfig: () =>
+    api<PublishingConfig>('/publishing/config'),
+  updateConfig: (data: Partial<PublishingConfig>) =>
+    api<PublishingConfig>('/publishing/config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getApiStatus: () =>
+    api<{ status: string; url: string; error?: string }>('/publishing/api/status'),
+  generateApiKey: () =>
+    api<{ api_key: string }>('/publishing/api/generate-key', { method: 'POST' }),
+  getMcpStatus: () =>
+    api<McpStatus>('/publishing/mcp/status'),
+  startMcp: () =>
+    api<McpStatus>('/publishing/mcp/start', { method: 'POST' }),
+  stopMcp: () =>
+    api<McpStatus>('/publishing/mcp/stop', { method: 'POST' }),
+  listMcpTools: () =>
+    api<Array<{ name: string; description: string; parameters: any }>>('/publishing/mcp/tools'),
+  getMcpConfigSnippet: (target: string) =>
+    api<{ target: string; config: any }>(`/publishing/mcp/config-snippet?target=${encodeURIComponent(target)}`),
+  generateSkills: (format: string, tools?: string[]) =>
+    api<any>(`/publishing/skills/generate?format=${encodeURIComponent(format)}${tools ? `&tools=${tools.join(',')}` : ''}`),
+};

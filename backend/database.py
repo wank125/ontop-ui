@@ -109,6 +109,21 @@ CREATE TABLE IF NOT EXISTS query_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_history_ts ON query_history(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS publishing_config (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    api_enabled INTEGER NOT NULL DEFAULT 1,
+    api_key TEXT NOT NULL DEFAULT '',
+    api_key_encrypted INTEGER NOT NULL DEFAULT 0,
+    cors_origins TEXT NOT NULL DEFAULT '*',
+    mcp_enabled INTEGER NOT NULL DEFAULT 0,
+    mcp_port INTEGER NOT NULL DEFAULT 9000,
+    mcp_selected_tools TEXT NOT NULL DEFAULT '[]',
+    skills_enabled INTEGER NOT NULL DEFAULT 1,
+    skills_selected_formats TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
 """
 
 
