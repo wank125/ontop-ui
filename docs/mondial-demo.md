@@ -8,9 +8,11 @@
 
 Mondial 是由德国哥廷根大学 (University of Göttingen) 维护的全球地理信息数据库，涵盖国家、城市、河流、湖泊、山脉、沙漠、岛屿、机场、组织、语言、宗教、经济等数据。
 
+说明：以下统计基于仓库当前附带的 `mondial-inputs.psql` 实测结果，不同版本的 Mondial 数据文件可能略有差异。
+
 | 维度 | 数据量 |
 |------|--------|
-| 国家 (country) | 246 |
+| 国家 (country) | 179 |
 | 城市 (city) | 3,427 |
 | 河流 (river) | 665 |
 | 山脉 (mountain) | 587 |
@@ -83,8 +85,11 @@ docker exec ontop-lvfa-db psql -U admin -d mondial_db -f /tmp/mondial-schema.psq
 docker exec ontop-lvfa-db psql -U admin -d mondial_db -f /tmp/mondial-inputs.psql
 
 # 4. 验证
-docker exec ontop-lvfa-db psql -U admin -d mondial_db -c "\dt" | wc -l
-# 应输出 47 表
+docker exec ontop-lvfa-db psql -U admin -d mondial_db -tAc "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public';"
+# 应输出 47
+
+docker exec ontop-lvfa-db psql -U admin -d mondial_db -tAc "SELECT COUNT(*) FROM country;"
+# 当前文件实测为 179
 ```
 
 ---
@@ -144,9 +149,11 @@ Bootstrap 产物：
 
 | 文件 | 说明 |
 |------|------|
-| `Mondial_PostgreSQL_ontology.ttl` | OWL 本体 (47 个类, 58+ 数据属性) |
+| `Mondial_PostgreSQL_ontology.ttl` | OWL 本体 (47 个类, 57+ 数据属性) |
 | `Mondial_PostgreSQL_mapping.obda` | OBDA 映射 (47 条映射规则) |
 | `Mondial_PostgreSQL.properties` | JDBC 连接属性 |
+
+注意：当前 Mondial schema 没有显式外键约束，Bootstrap 结果以“表 -> 类、列 -> 数据属性”为主，跨表查询通常需要通过共享字段显式 JOIN。
 
 ### Step 4: 启动 Ontop 端点
 
@@ -243,7 +250,8 @@ LIMIT 5
 ```sparql
 SELECT ?name ?gdp WHERE {
   ?c <http://example.com/mondial/country#name> ?name .
-  ?ec <http://example.com/mondial/economy#country> ?name .
+  ?c <http://example.com/mondial/country#code> ?code .
+  ?ec <http://example.com/mondial/economy#country> ?code .
   ?ec <http://example.com/mondial/economy#gdp> ?gdp .
 }
 ORDER BY DESC(?gdp)
@@ -285,7 +293,7 @@ SELECT ?river WHERE {
 | 自然语言问题 | 结果 |
 |-------------|------|
 | 世界上最长的5条河流 | 正确返回长江、黄河等 |
-| 有哪些国家？ | 返回 246 个国家列表 |
+| 有哪些国家？ | 正确返回国家列表，默认展示前 20 条 |
 
 ### 5.2 AI 查询工作原理
 
@@ -294,7 +302,9 @@ SELECT ?river WHERE {
     ↓
 LLM 生成 SPARQL
     ↓
-自动修复 URI (cls:prop → <base/Table#prop>)
+根据当前本体摘要约束类和属性
+    ↓
+自动修复 URI / ORDER BY / LIMIT
     ↓
 Ontop 重写为 SQL
     ↓
@@ -303,10 +313,17 @@ Ontop 重写为 SQL
 LLM 生成中文回答
 ```
 
-系统内置两项自动修复：
+系统当前包含三层约束：
 
-1. **URI 扩展**: `cls:name` → `<http://example.com/mondial/river#name>`（根据查询中的 `a cls:river` 推断正确类名）
-2. **语法修正**: 将错误放在 `WHERE {}` 内的 `ORDER BY`/`LIMIT` 移到外层
+1. **本体感知提示词**: 根据当前类清单和每个类可用的属性生成 Prompt，避免编造属性
+2. **URI 扩展**: `cls:name` → `<http://example.com/mondial/river#name>`（根据查询中的 `a cls:river` 推断正确类名）
+3. **语法修正**: 将错误放在 `WHERE {}` 内的 `ORDER BY`/`LIMIT`/`OFFSET` 移到外层
+
+对于 Mondial 这类“Bootstrap 直出、对象属性很少”的本体，系统会自动采用更保守的查询策略：
+
+- 优先查询单表属性
+- 跨表时通过共享字段手工 JOIN
+- “列出有哪些 X” 默认只取名称、代码等主标识字段
 
 ### 5.3 URI 命名规则
 
@@ -327,15 +344,15 @@ Bootstrap 生成的本体遵循 `TableName#ColumnName` 命名模式：
 
 ### 关系图谱
 
-基于 Vis.js 展示 47 个类之间的关系网络，支持缩放和拖拽。
+基于 Vis.js 展示 47 个类和属性之间的关系网络，支持缩放和拖拽。
 
 ### 本体定义
 
 解析 TTL 文件，展示：
 
 - **类列表**: country, city, river, mountain, lake, island, airport, economy 等 47 个类
-- **数据属性**: name, population, area, length, elevation, gdp, depth 等 58+ 个属性
-- **对象属性**: 外键关系
+- **数据属性**: name, population, area, length, elevation, gdp, depth 等 57+ 个属性
+- **对象属性**: 当前 Mondial Bootstrap 结果中基本没有显式对象属性
 - **SHACL 约束**: 如有
 
 ---
@@ -360,11 +377,12 @@ Bootstrap 生成的本体遵循 `TableName#ColumnName` 命名模式：
 1. 检查 LM Studio 是否运行：`curl http://192.168.31.244:1234/v1/models`
 2. 检查 AI 设置页的 Base URL 和 Model 是否正确
 3. 检查 Ontop 端点是否运行中
-4. 尝试手动编写 SPARQL 在查询页面验证数据
+4. 检查当前是否已切换到 Mondial endpoint，而不是默认 LVFA endpoint
+5. 尝试手动编写 SPARQL 在查询页面验证数据
 
 ### Q: SPARQL 语法错误
 
-属性 URI 必须使用完整路径加尖括号：`<http://example.com/mondial/river#name>`，不能简写为 `cls:name`。跨表查询需要通过共享字段（如 `country#code` 与 `encompasses#country`）进行 JOIN。
+属性 URI 必须使用完整路径加尖括号：`<http://example.com/mondial/river#name>`，不能简写为 `cls:name`。当前 Mondial schema 没有显式外键，跨表查询通常需要通过共享字段（如 `country#code` 与 `encompasses#country`、`economy#country`）进行 JOIN。
 
 ### Q: Docker 容器重建后数据丢失
 

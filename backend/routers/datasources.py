@@ -18,6 +18,7 @@ from services.bootstrap_service import (
     resolve_requested_tables,
     write_manifest,
 )
+from services.ontology_format import normalize_ontology_to_turtle
 from config import DATA_DIR
 from repositories.datasource_repo import (
     list_datasources as repo_list,
@@ -165,6 +166,9 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
         if not success:
             raise HTTPException(400, f"Bootstrap failed: {output[:500]}")
 
+    raw_ontology_path = onto_path
+    onto_path = normalize_ontology_to_turtle(onto_path)
+
     manifest = {
         "version": version,
         "mode": effective_mode,
@@ -174,6 +178,7 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
         "include_dependencies": req.include_dependencies,
         "base_iri": req.base_iri,
         "created_at": datetime.now().isoformat(),
+        "raw_ontology_path": raw_ontology_path,
         "ontology_path": onto_path,
         "mapping_path": mapping_path,
         "properties_path": str(props_path),
@@ -192,6 +197,40 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
         "manifest_path": str(manifest_path),
         "selected_tables_path": str(selected_tables_path),
         "output": output[:1000],
+    }
+
+
+@router.get("/{ds_id}/bootstrap/latest")
+async def get_latest_bootstrap(ds_id: str):
+    root_output_dir = Path(DATA_DIR) / ds_id
+    if not root_output_dir.exists():
+        return None
+        
+    dirs = [d for d in root_output_dir.iterdir() if d.is_dir() and d.name.startswith("bootstrap-")]
+    if not dirs:
+        return None
+        
+    dirs.sort(key=lambda x: x.name, reverse=True)
+    latest_dir = dirs[0]
+    
+    manifest_path = latest_dir / "manifest.json"
+    if not manifest_path.exists():
+         return None
+         
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    
+    return {
+        "version": manifest.get("version"),
+        "mode": manifest.get("mode"),
+        "requested_tables": manifest.get("requested_tables", []),
+        "resolved_tables": manifest.get("resolved_tables", []),
+        "added_dependencies": manifest.get("added_dependencies", []),
+        "ontology_path": manifest.get("ontology_path"),
+        "mapping_path": manifest.get("mapping_path"),
+        "properties_path": manifest.get("properties_path"),
+        "manifest_path": str(manifest_path),
+        "selected_tables_path": str(latest_dir / "selected_tables.json"),
+        "output": "从历史记录加载",
     }
 
 

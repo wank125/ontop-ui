@@ -185,15 +185,26 @@ export default function DbSchemaPage() {
     });
   }, []);
 
-  useEffect(() => {
-    if (!selectedId) return;
-    loadSchema(selectedId);
-  }, [selectedId]);
+  const loadLatestBootstrap = async (dataSourceId: string) => {
+    if (!dataSourceId) return;
+    try {
+      const result = await datasources.getLatestBootstrap(dataSourceId);
+      setBootstrapResult(result);
+    } catch {
+      setBootstrapResult(null);
+    }
+  };
 
   useEffect(() => {
+    if (!selectedId) return;
+    
+    // Clear state before loading
     setSelectedTables([]);
     setPartialPreview(null);
     setBootstrapResult(null);
+    
+    loadSchema(selectedId);
+    loadLatestBootstrap(selectedId);
   }, [selectedId]);
 
   const cleanedRelations = useMemo<CleanedRelation[]>(() => {

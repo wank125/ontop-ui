@@ -117,6 +117,8 @@ export const datasources = {
       `/datasources/${id}/bootstrap`,
       { method: 'POST', body: JSON.stringify(data) },
     ),
+  getLatestBootstrap: (id: string) =>
+    api<BootstrapResult | null>(`/datasources/${id}/bootstrap/latest`),
 };
 
 // ── Mappings ───────────────────────────────────────────

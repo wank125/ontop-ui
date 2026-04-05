@@ -8,26 +8,39 @@ from models.mapping import MappingContent, ValidateRequest, RestartEndpointReque
 from services.obda_parser import parse_obda, serialize_obda
 from services.ontop_cli import validate as ontop_validate
 from services.ontop_endpoint import start_endpoint, stop_endpoint
-from config import ONTOP_OUTPUT, ONTOLOGY_FILE, MAPPING_FILE, PROPERTIES_FILE, ONTOP_ENDPOINT_PORT
+from config import DATA_DIR, ONTOP_OUTPUT, ONTOLOGY_FILE, MAPPING_FILE, PROPERTIES_FILE, ONTOP_ENDPOINT_PORT
 
 router = APIRouter(prefix="/mappings", tags=["mappings"])
 
 
+def _iter_search_dirs() -> list[Path]:
+    dirs: list[Path] = []
+    for candidate in [ONTOP_OUTPUT, DATA_DIR]:
+        if candidate not in dirs:
+            dirs.append(candidate)
+    return dirs
+
+
 @router.get("")
 async def list_mappings():
-    """List available .obda files in the output directory."""
+    """List available .obda files in the default output and bootstrap data directories."""
     files = []
-    search_dirs = [ONTOP_OUTPUT]
-    for d in search_dirs:
+    seen_paths: set[str] = set()
+    for d in _iter_search_dirs():
         if not d.exists():
             continue
         for f in d.glob("**/*.obda"):
+            resolved = str(f.resolve())
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
             stat = f.stat()
             files.append({
                 "path": str(f),
                 "filename": f.name,
                 "modified_at": stat.st_mtime,
             })
+    files.sort(key=lambda item: item["modified_at"], reverse=True)
     return files
 
 

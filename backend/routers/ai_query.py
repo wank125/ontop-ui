@@ -1,6 +1,7 @@
 """AI natural language query router."""
 import json
 import logging
+import re
 from typing import Any, Optional
 
 import httpx
@@ -72,39 +73,41 @@ DEFAULT_CONFIG = {
     "max_tokens": 1024,
 }
 
-DEFAULT_SYSTEM_PROMPT = """你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。
-
-本体结构:
-- 类: {classes}
-- 数据属性: {properties}
-- 对象属性(关系): {relationships}
+DEFAULT_SYSTEM_PROMPT = """你是一个严格的 SPARQL 查询生成器。根据当前本体结构把用户问题翻译成一条可执行的 SPARQL。
 
 声明的 Prefix:
 {prefixes}
 
-重要：必须使用上面声明的 Prefix 中的 cls: 前缀来构建 URI。
-类 URI 用 cls:<ClassName>，属性 URI 也用 cls:<propertyName>。
-不要编造其他命名空间。
+当前本体中每个类可用的属性如下，属性格式为 ClassName#attrName：
+{class_properties}
 
 规则:
-1. 只返回一条 SPARQL 查询，不要解释
-2. URI 模板使用尖括号，变量使用问号前缀
-3. 使用 PREFIX 声明命名空间
-4. 中文值直接用引号匹配
-5. 属性使用完整 URI（用 cls: 前缀 + 类名 + 属性名的模式）
-6. 类的 URI 格式: cls:<ClassName>，属性的 URI 格式: cls:<propertyName>
+1. 只返回一条 SPARQL，不要解释，不要 Markdown。
+2. 类只能写成 cls:ClassName。
+3. 属性不要写 cls:name 这类简写，必须写完整 URI：<{cls_base}ClassName#attrName>。
+4. 只能使用上面列出的真实类和真实属性，禁止编造属性。
+5. 如果本体没有对象属性，跨表查询必须通过共享标识字段连接，例如 code、country、province、name。
+6. 除非问题明确要求，不要附加无关属性。
+7. 如果用户是在“列出有哪些 X”，优先只返回名称、代码或主标识属性。
+8. ORDER BY、LIMIT、OFFSET 必须写在最外层右花括号之后。
 
-示例:
-- 查询所有类型为 X 的实例及其属性:
-  SELECT ?s ?val WHERE {{
-    ?s a cls:X ; cls:attr1 ?val .
-  }}
+示例 1:
+PREFIX cls: <{cls_base}>
+SELECT ?name WHERE {{
+  ?c a cls:country ;
+     <{cls_base}country#name> ?name .
+}}
+LIMIT 20
 
-- 查询有关系的两个实例:
-  SELECT ?a ?b WHERE {{
-    ?a a cls:A ; cls:ref_b_id ?b .
-    ?b a cls:B .
-  }}"""
+示例 2:
+PREFIX cls: <{cls_base}>
+SELECT ?name ?length WHERE {{
+  ?r a cls:river ;
+     <{cls_base}river#name> ?name ;
+     <{cls_base}river#length> ?length .
+}}
+ORDER BY DESC(?length)
+LIMIT 5"""
 
 DEFAULT_QUICK_QUESTIONS = [
     {"id": "1", "question": "有哪些物业项目？"},
@@ -113,6 +116,15 @@ DEFAULT_QUICK_QUESTIONS = [
     {"id": "4", "question": "每个项目的客户数量？"},
     {"id": "5", "question": "最近有哪些工单？"},
 ]
+
+PROFILE_PROMPT_HINTS = {
+    "bootstrap_flat": """
+当前本体是从关系表直接 bootstrap 得到的，几乎没有对象属性。
+因此你必须优先把查询写成“同类实例 + 列属性过滤”，需要跨表时显式通过共享字段做连接。
+不要假设 country 具有 gdp、language、continent 这类其他表的属性，除非当前类属性列表里明确存在。""".strip(),
+    "relation_rich": """
+当前本体存在对象属性。优先使用对象属性表达类之间关系，只有在对象属性不存在时才退回共享字段连接。""".strip(),
+}
 
 
 def _load_ai_config() -> dict:
@@ -131,6 +143,131 @@ def _save_ai_config(config: dict):
     """Save AI config to SQLite."""
     from repositories.ai_config_repo import save_config
     save_config(config)
+
+
+def _detect_ontology_profile(class_properties: dict[str, list[str]], object_properties: set[str]) -> str:
+    if object_properties:
+        return "relation_rich"
+    return "bootstrap_flat"
+
+
+def _build_default_prompt(profile: str) -> str:
+    hint = PROFILE_PROMPT_HINTS.get(profile, "")
+    if not hint:
+        return DEFAULT_SYSTEM_PROMPT
+    return DEFAULT_SYSTEM_PROMPT + "\n\n补充约束:\n" + hint
+
+
+def _extract_property_name(prop_uri: str) -> str:
+    if "#" in prop_uri:
+        return prop_uri.split("#", 1)[-1]
+    return prop_uri.rsplit("/", 1)[-1]
+
+
+def _extract_class_name(prop_uri: str, cls_base: str) -> str | None:
+    if not prop_uri.startswith(cls_base):
+        return None
+    suffix = prop_uri[len(cls_base):]
+    if "#" not in suffix:
+        return None
+    return suffix.split("#", 1)[0]
+
+
+def _normalize_generated_sparql(sparql: str, summary: dict[str, Any]) -> str:
+    sparql = sparql.strip()
+    if sparql.startswith("```"):
+        sparql = "\n".join(sparql.split("\n")[1:-1]).strip()
+
+    prefix_lines = []
+    for prefix, uri in summary["prefixes"].items():
+        if f"PREFIX {prefix}:" not in sparql:
+            prefix_lines.append(f"PREFIX {prefix}: <{uri}>")
+    if prefix_lines:
+        sparql = "\n".join(prefix_lines) + "\n" + sparql
+
+    cls_base = summary["prefixes"].get("cls", "")
+    class_properties = summary.get("class_properties", {})
+    known_classes = set(summary["classes"])
+
+    if cls_base and class_properties:
+        prop_to_classes: dict[str, list[str]] = {}
+        for cls_name, prop_list in class_properties.items():
+            for prop_uri in prop_list:
+                prop_name = _extract_property_name(prop_uri)
+                prop_to_classes.setdefault(prop_name, []).append(cls_name)
+
+        query_classes = set(re.findall(r'a\s+cls:(\w+)', sparql))
+        for token in sorted(set(re.findall(r'cls:(\w+)', sparql))):
+            if token in known_classes:
+                continue
+            candidate_classes = prop_to_classes.get(token, [])
+            if not candidate_classes:
+                continue
+            matched = [cls_name for cls_name in candidate_classes if cls_name in query_classes]
+            class_name = matched[0] if matched else candidate_classes[0]
+            sparql = re.sub(
+                rf'(?<![#/\w])cls:{re.escape(token)}(?!\w)',
+                f"<{cls_base}{class_name}#{token}>",
+                sparql,
+            )
+
+    lines = sparql.splitlines()
+    body_lines: list[str] = []
+    moved_modifiers: list[str] = []
+    brace_depth = 0
+    top_level_started = False
+
+    for line in lines:
+        stripped = line.strip()
+        is_modifier = stripped.startswith(("ORDER BY", "LIMIT", "OFFSET"))
+        if is_modifier and top_level_started and brace_depth > 0:
+            moved_modifiers.append(stripped)
+            continue
+        body_lines.append(line)
+        brace_depth += line.count("{") - line.count("}")
+        if "{" in line:
+            top_level_started = True
+
+    if moved_modifiers:
+        body = "\n".join(body_lines).rstrip()
+        body += "\n" + "\n".join(moved_modifiers)
+        sparql = body
+    else:
+        sparql = "\n".join(body_lines)
+
+    return sparql.strip()
+
+
+def _build_fallback_sparql(question: str, summary: dict[str, Any]) -> str | None:
+    cls_base = summary["prefixes"].get("cls", "")
+    class_props = summary.get("class_properties", {})
+    q = question.strip()
+
+    if "国家" in q and any(keyword in q for keyword in ("有哪些", "哪些", "列出")) and "country" in class_props:
+        return (
+            f"PREFIX cls: <{cls_base}>\n"
+            "SELECT ?name WHERE {\n"
+            "  ?country a cls:country ;\n"
+            f"           <{cls_base}country#name> ?name .\n"
+            "}\n"
+            "ORDER BY ?name\n"
+            "LIMIT 50"
+        )
+
+    if "河流" in q and "最长" in q and "river" in class_props:
+        limit = 5 if "5" in q or "五" in q else 10
+        return (
+            f"PREFIX cls: <{cls_base}>\n"
+            "SELECT ?name ?length WHERE {\n"
+            "  ?river a cls:river ;\n"
+            f"         <{cls_base}river#name> ?name ;\n"
+            f"         <{cls_base}river#length> ?length .\n"
+            "}\n"
+            "ORDER BY DESC(?length)\n"
+            f"LIMIT {limit}"
+        )
+
+    return None
 
 
 # ── Config API ─────────────────────────────────────────
@@ -417,12 +554,15 @@ async def ontology_summary():
                 short_props.append(puri.rsplit("/", 1)[-1])
         class_property_summary[cls_name] = short_props
 
+    profile = _detect_ontology_profile(class_property_summary, object_properties)
+
     return {
         "classes": sorted(classes),
         "data_properties": sorted(data_properties),
         "object_properties": sorted(object_properties),
         "prefixes": namespaces,
         "class_properties": class_property_summary,
+        "ontology_profile": profile,
     }
 
 
@@ -440,7 +580,7 @@ async def ai_query(question: str):
 
         # Use custom system prompt if configured
         config = _load_ai_config()
-        custom_prompt = config.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
+        custom_prompt = config.get("system_prompt") or _build_default_prompt(summary.get("ontology_profile", "bootstrap_flat"))
 
         prompt = build_sparql_prompt(
             classes=summary["classes"],
@@ -452,87 +592,7 @@ async def ai_query(question: str):
         )
 
         sparql = await generate_sparql(prompt, question)
-        sparql = sparql.strip()
-        if sparql.startswith("```"):
-            sparql = "\n".join(sparql.split("\n")[1:-1])
-
-        # Auto-inject PREFIX declarations if missing
-        prefix_lines = []
-        for prefix, uri in summary["prefixes"].items():
-            if f"PREFIX {prefix}:" not in sparql:
-                prefix_lines.append(f"PREFIX {prefix}: <{uri}>")
-        if prefix_lines:
-            sparql = "\n".join(prefix_lines) + "\n" + sparql
-
-        # Auto-fix: expand cls:PropertyName to <cls_base/ClassName#propertyName>
-        # using class_properties mapping to find the correct class for each property
-        import re as _re
-        cls_base = summary["prefixes"].get("cls", "")
-        if cls_base and summary.get("class_properties"):
-            # Build property-name -> list of ClassNames (a property can belong to multiple classes)
-            prop_to_classes: dict[str, list[str]] = {}
-            for cls_name, prop_list in summary["class_properties"].items():
-                for prop_uri in prop_list:
-                    if "#" in prop_uri:
-                        prop_local = prop_uri.split("#", 1)[-1]
-                    else:
-                        prop_local = prop_uri.rsplit("/", 1)[-1]
-                    prop_to_classes.setdefault(prop_local, []).append(cls_name)
-
-            # Detect classes referenced in the query via "?var a cls:ClassName" or "a cls:ClassName"
-            query_classes: set[str] = set()
-            for m in _re.finditer(r'a\s+cls:(\w+)', sparql):
-                query_classes.add(m.group(1))
-
-            # Replace cls:propName but NOT cls:ClassName (when used as type)
-            known_classes = set(summary["classes"])
-            tokens = _re.findall(r'cls:(\w+)', sparql)
-            expanded_tokens = set()
-            for t in tokens:
-                if t not in known_classes:
-                    expanded_tokens.add(t)
-            if expanded_tokens:
-                for prop_name in expanded_tokens:
-                    if prop_name in prop_to_classes:
-                        candidates = prop_to_classes[prop_name]
-                        # Prefer the class that appears in the query
-                        matched = [c for c in candidates if c in query_classes]
-                        cn = matched[0] if matched else candidates[0]
-                        sparql = sparql.replace(
-                            f"cls:{prop_name}",
-                            f"<{cls_base}{cn}#{prop_name}>"
-                        )
-
-        # Auto-fix: move ORDER BY / LIMIT / OFFSET from inside {} to after }
-        closing_brace_pos = sparql.rfind("}")
-        if closing_brace_pos > 0:
-            after_brace = sparql[closing_brace_pos + 1:].strip()
-            before_brace = sparql[:closing_brace_pos + 1]
-            trailing_modifiers = ""
-            for mod in ["ORDER BY", "LIMIT", "OFFSET"]:
-                pattern = rf'\s+{mod}\b[^\}}]*'
-                match_inside = _re.search(pattern, before_brace)
-                if match_inside:
-                    mod_text = match_inside.group(0).strip()
-                    # Check it's actually inside the WHERE body (not part of a sub-select)
-                    # Only remove if it appears after the last { and before }
-                    last_open = before_brace.rfind("{")
-                    brace_depth = 0
-                    for ch in before_brace[last_open:]:
-                        if ch == "{":
-                            brace_depth += 1
-                        elif ch == "}":
-                            brace_depth -= 1
-                    if brace_depth == 0 and last_open > 0:
-                        # It's at the top level WHERE - need to move it outside
-                        pass
-                    else:
-                        continue
-                    trailing_modifiers += f" {mod_text}"
-                    before_brace = before_brace[:match_inside.start()] + before_brace[match_inside.end():]
-
-            if trailing_modifiers:
-                sparql = before_brace.rstrip() + "\n" + trailing_modifiers.strip()
+        sparql = _normalize_generated_sparql(sparql, summary)
 
         yield {"event": "sparql", "data": json.dumps({"step": "sparql_generated", "sparql": sparql})}
 
@@ -592,6 +652,65 @@ async def ai_query(question: str):
         if total_count is not None:
             event_data["total_count"] = total_count
         yield {"event": "executed", "data": json.dumps(event_data)}
+
+        should_retry = (
+            ("Error:" in result_text or total_count == 0)
+            and summary.get("ontology_profile") == "bootstrap_flat"
+        )
+        fallback_sparql = _build_fallback_sparql(question, summary) if should_retry else None
+
+        if fallback_sparql and fallback_sparql.strip() != sparql.strip():
+            fallback_sparql = _normalize_generated_sparql(fallback_sparql, summary)
+            yield {"event": "sparql", "data": json.dumps({"step": "sparql_fallback", "sparql": fallback_sparql})}
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                try:
+                    resp = await client.get(
+                        f"{ONTOP_ENDPOINT_URL}/ontop/reformulate",
+                        params={"query": fallback_sparql},
+                    )
+                    if resp.status_code == 200:
+                        sql = resp.text
+                except Exception:
+                    pass
+
+                try:
+                    resp = await client.post(
+                        f"{ONTOP_ENDPOINT_URL}/sparql",
+                        data=fallback_sparql,
+                        headers={
+                            "Content-Type": "application/sparql-query",
+                            "Accept": "application/sparql-results+json",
+                        },
+                    )
+                    if resp.status_code == 200:
+                        result_text = resp.text
+                    else:
+                        result_text = f"Error: {resp.text[:200]}"
+                except httpx.ConnectError:
+                    result_text = "Error: Ontop endpoint not running"
+
+            total_count = None
+            result_for_llm = result_text
+            try:
+                parsed = json.loads(result_text)
+                bindings = parsed.get("results", {}).get("bindings", [])
+                total_count = len(bindings)
+                if len(result_text) > MAX_RESULT_CHARS:
+                    for row in bindings:
+                        for cell in row.values():
+                            val = cell.get("value", "")
+                            if len(val) > 80:
+                                cell["value"] = val[:80] + "..."
+                    result_for_llm = json.dumps(parsed, ensure_ascii=False)
+            except (json.JSONDecodeError, AttributeError):
+                if len(result_for_llm) > MAX_RESULT_CHARS:
+                    result_for_llm = result_for_llm[:MAX_RESULT_CHARS]
+
+            fallback_event = {"step": "executed_fallback", "sql": sql, "results": result_text[:3000]}
+            if total_count is not None:
+                fallback_event["total_count"] = total_count
+            yield {"event": "executed", "data": json.dumps(fallback_event)}
 
         answer = await generate_answer(question, result_for_llm)
         yield {"event": "answer", "data": json.dumps({"step": "answer", "answer": answer})}

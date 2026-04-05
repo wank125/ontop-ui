@@ -255,6 +255,45 @@ export default function DataSourcePage() {
     loadSources();
   }, []);
 
+  const checkLatestBootstrap = async (id: string) => {
+    try {
+      const result = await datasources.getLatestBootstrap(id);
+      if (result) {
+        setDataSources((previous) =>
+          previous.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  bootstrapReady: true,
+                  bootstrapPaths: {
+                    ontologyPath: result.ontology_path,
+                    mappingPath: result.mapping_path,
+                    propertiesPath: result.properties_path,
+                  },
+                }
+              : item
+          )
+        );
+      } else {
+        setDataSources((previous) =>
+          previous.map((item) =>
+            item.id === id
+              ? { ...item, bootstrapReady: false, bootstrapPaths: undefined }
+              : item
+          )
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (activeId) {
+      checkLatestBootstrap(activeId);
+    }
+  }, [activeId]);
+
   const filteredDataSources = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return dataSources;
