@@ -132,6 +132,23 @@ def init_db():
     conn = get_connection()
     conn.executescript(_SCHEMA_SQL)
     conn.commit()
+
+    # ── Schema migrations (idempotent) ───────────────────
+    _migrations = [
+        "ALTER TABLE query_history ADD COLUMN source_ip TEXT DEFAULT ''",
+        "ALTER TABLE query_history ADD COLUMN caller TEXT DEFAULT 'web'",
+        "ALTER TABLE query_history ADD COLUMN duration_ms REAL",
+        "ALTER TABLE query_history ADD COLUMN status TEXT DEFAULT 'ok'",
+        "ALTER TABLE query_history ADD COLUMN error_message TEXT DEFAULT ''",
+    ]
+    for sql in _migrations:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_history_caller ON query_history(caller)")
+    conn.commit()
+
     logger.info("Database initialized at %s", DB_PATH)
 
 

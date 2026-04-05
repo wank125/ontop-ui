@@ -4,6 +4,7 @@ import json
 import secrets
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 
 from models.publishing import PublishingConfigUpdate
 from repositories.publishing_repo import load_publishing_config, update_publishing_config
@@ -143,3 +144,42 @@ async def skills_generate(format: str = "openai_function", tools: str = ""):
         return generate_generic_json_schema(selected)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown format: {format}")
+
+
+# ── Audit ──────────────────────────────────────────────────
+
+@router.get("/audit/logs")
+async def get_audit_logs(
+    page: int = 1,
+    page_size: int = 20,
+    caller: str | None = None,
+    status: str | None = None,
+):
+    """Paginated audit log retrieval with optional filters."""
+    from repositories.query_history_repo import list_audit_logs
+    return list_audit_logs(page, page_size, caller, status)
+
+
+@router.get("/audit/stats")
+async def get_audit_stats():
+    """Audit summary statistics."""
+    from repositories.query_history_repo import get_audit_stats
+    return get_audit_stats()
+
+
+# ── Data Card ──────────────────────────────────────────────
+
+@router.get("/datacard")
+async def get_datacard():
+    """Get ontology metadata data card as JSON."""
+    from services.datacard import generate_datacard
+    return generate_datacard()
+
+
+@router.get("/datacard.ttl")
+async def get_datacard_turtle():
+    """Get ontology metadata data card as RDF/Turtle."""
+    from services.datacard import generate_datacard, generate_datacard_turtle
+    card = generate_datacard()
+    ttl = generate_datacard_turtle(card)
+    return Response(content=ttl, media_type="text/turtle")

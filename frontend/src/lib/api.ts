@@ -2,7 +2,7 @@ const API_BASE = '/api/v1';
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', 'X-Internal-Request': 'true', ...options?.headers },
     ...options,
   });
   if (res.status === 204) return undefined as T;
@@ -432,6 +432,53 @@ export interface McpStatus {
   transport: string;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  query: string;
+  timestamp: string;
+  result_count?: number;
+  source_ip: string;
+  caller: string;
+  duration_ms?: number;
+  status: string;
+  error_message: string;
+}
+
+export interface AuditStats {
+  total_queries: number;
+  ok_count: number;
+  error_count: number;
+  success_rate: number;
+  avg_duration_ms: number;
+  by_caller: Record<string, number>;
+  recent_errors: AuditLogEntry[];
+}
+
+export interface AuditLogsResponse {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface DataCard {
+  schema_version: string;
+  generated_at: string;
+  ontology: { title: string; version: string; iri: string };
+  statistics: {
+    class_count: number;
+    data_property_count: number;
+    object_property_count: number;
+    shacl_constraint_count: number;
+    mapping_rule_count: number;
+  };
+  class_breakdown: Array<{ name: string; property_count: number; uri?: string }>;
+  data_source: { type: string; mapping_path: string; ontology_path: string };
+  data_source_health: { endpoint_reachable: boolean; endpoint_url: string };
+  instance_estimates: Record<string, number>;
+  last_updated: string;
+}
+
 export const publishing = {
   getConfig: () =>
     api<PublishingConfig>('/publishing/config'),
@@ -456,4 +503,10 @@ export const publishing = {
     api<{ target: string; config: any }>(`/publishing/mcp/config-snippet?target=${encodeURIComponent(target)}`),
   generateSkills: (format: string, tools?: string[]) =>
     api<any>(`/publishing/skills/generate?format=${encodeURIComponent(format)}${tools ? `&tools=${tools.join(',')}` : ''}`),
+  getAuditLogs: (page: number, pageSize: number, caller?: string, status?: string) =>
+    api<AuditLogsResponse>(`/publishing/audit/logs?page=${page}&page_size=${pageSize}${caller ? `&caller=${caller}` : ''}${status ? `&status=${status}` : ''}`),
+  getAuditStats: () =>
+    api<AuditStats>('/publishing/audit/stats'),
+  getDatacard: () =>
+    api<DataCard>('/publishing/datacard'),
 };

@@ -31,11 +31,14 @@ import {
   Save,
   Server,
   Share2,
+  Shield,
   Square,
   Wrench,
   XCircle,
+  Database,
+  FileText,
 } from 'lucide-react';
-import { publishing, type PublishingConfig, type McpStatus } from '@/lib/api';
+import { publishing, type PublishingConfig, type McpStatus, type AuditStats, type AuditLogsResponse, type DataCard } from '@/lib/api';
 
 const MCP_TARGETS = [
   { value: 'claude_desktop', label: 'Claude Desktop' },
@@ -69,6 +72,18 @@ export default function PublishingPage() {
   const [skillsText, setSkillsText] = useState('');
   const [skillsLoading, setSkillsLoading] = useState(false);
 
+  // Audit
+  const [auditStats, setAuditStats] = useState<AuditStats | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogsResponse | null>(null);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditCaller, setAuditCaller] = useState('');
+  const [auditStatus, setAuditStatus] = useState('');
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  // Datacard
+  const [datacard, setDatacard] = useState<DataCard | null>(null);
+  const [datacardLoading, setDatacardLoading] = useState(false);
+
   // Local config edits
   const [editConfig, setEditConfig] = useState<Partial<PublishingConfig>>({});
 
@@ -90,6 +105,35 @@ export default function PublishingPage() {
       toast.error('加载失败: ' + e.message);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadAudit = useCallback(async (page = 1, caller = '', status = '') => {
+    setAuditLoading(true);
+    try {
+      const [stats, logs] = await Promise.all([
+        publishing.getAuditStats(),
+        publishing.getAuditLogs(page, 15, caller || undefined, status || undefined),
+      ]);
+      setAuditStats(stats);
+      setAuditLogs(logs);
+      setAuditPage(page);
+    } catch (e: any) {
+      toast.error('审计数据加载失败: ' + e.message);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  const loadDatacard = useCallback(async () => {
+    setDatacardLoading(true);
+    try {
+      const card = await publishing.getDatacard();
+      setDatacard(card);
+    } catch (e: any) {
+      toast.error('数据卡片加载失败: ' + e.message);
+    } finally {
+      setDatacardLoading(false);
     }
   }, []);
 
@@ -268,6 +312,14 @@ export default function PublishingPage() {
             <Share2 className="mr-2 h-4 w-4" />
             插件 / Skills
           </TabsTrigger>
+          <TabsTrigger value="audit" className="gap-2 rounded-lg px-4 py-2" onClick={() => loadAudit()}>
+            <Shield className="mr-2 h-4 w-4" />
+            查询审计
+          </TabsTrigger>
+          <TabsTrigger value="datacard" className="gap-2 rounded-lg px-4 py-2" onClick={() => loadDatacard()}>
+            <Database className="mr-2 h-4 w-4" />
+            数据卡片
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Tab 1: API ─────────────────────────── */}
@@ -339,6 +391,24 @@ export default function PublishingPage() {
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   保存配置
                 </Button>
+              </div>
+
+              {/* Auth instructions */}
+              <div className="rounded-lg border border-border/70 bg-[var(--muted)]/30 p-4 space-y-2">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  鉴权说明
+                </p>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  启用 API 接入后，外部请求需在请求头中携带 <code className="rounded bg-[var(--muted)] px-1">X-API-Key</code> 或查询参数 <code className="rounded bg-[var(--muted)] px-1">?api_key=</code>。
+                  前端页面和 localhost 请求自动跳过鉴权。
+                </p>
+                <pre className="overflow-x-auto rounded bg-[var(--muted)] p-3 text-xs font-mono">
+{`curl -H "X-API-Key: YOUR_KEY" \\
+  -X POST ${apiStatus?.url || 'http://localhost:8001/api/v1/sparql/query'}/sparql \\
+  -H "Content-Type: application/json" \\
+  -d '{"query":"SELECT ?s WHERE { ?s a <http://example.com/ontop/YourClass> } LIMIT 5"}'`}
+                </pre>
               </div>
             </CardContent>
           </Card>
@@ -528,6 +598,368 @@ export default function PublishingPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Tab 4: Audit ────────────────────────── */}
+        <TabsContent value="audit" className="space-y-4">
+          {/* Stats row */}
+          <div className="grid grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <FileText className="h-5 w-5 text-[var(--muted-foreground)]" />
+                <div>
+                  <p className="text-sm text-[var(--muted-foreground)]">总查询数</p>
+                  <p className="text-lg font-semibold">{auditStats?.total_queries ?? '-'}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <div>
+                  <p className="text-sm text-[var(--muted-foreground)]">成功率</p>
+                  <p className="text-lg font-semibold">
+                    {auditStats ? (auditStats.success_rate * 100).toFixed(1) + '%' : '-'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Loader2 className={`h-5 w-5 ${auditLoading ? 'animate-spin' : 'text-[var(--muted-foreground)]'}`} />
+                <div>
+                  <p className="text-sm text-[var(--muted-foreground)]">平均耗时</p>
+                  <p className="text-lg font-semibold">
+                    {auditStats ? auditStats.avg_duration_ms.toFixed(0) + ' ms' : '-'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <XCircle className="h-5 w-5 text-red-500" />
+                <div>
+                  <p className="text-sm text-[var(--muted-foreground)]">错误数</p>
+                  <p className="text-lg font-semibold">{auditStats?.error_count ?? '-'}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Caller breakdown */}
+          {auditStats && Object.keys(auditStats.by_caller).length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">按调用方统计</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-3">
+                  {Object.entries(auditStats.by_caller).map(([caller, count]) => (
+                    <Badge key={caller} variant="outline" className="text-sm">
+                      {caller}: {count}
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Filter + Log table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>审计日志</CardTitle>
+              <CardDescription>记录所有 SPARQL 查询的调用来源、耗时和状态</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Filters */}
+              <div className="flex items-center gap-3">
+                <Select value={auditCaller} onValueChange={(v) => { setAuditCaller(v); loadAudit(1, v, auditStatus); }}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="调用方" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    <SelectItem value="web">Web</SelectItem>
+                    <SelectItem value="mcp">MCP</SelectItem>
+                    <SelectItem value="api">API</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={auditStatus} onValueChange={(v) => { setAuditStatus(v); loadAudit(1, auditCaller, v); }}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    <SelectItem value="ok">成功</SelectItem>
+                    <SelectItem value="error">失败</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => loadAudit(auditPage, auditCaller, auditStatus)}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  刷新
+                </Button>
+              </div>
+
+              {/* Table */}
+              {auditLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-[var(--muted-foreground)]" />
+                </div>
+              ) : (
+                <div className="overflow-auto rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--muted)]/50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">时间</th>
+                        <th className="px-3 py-2 text-left font-medium">来源 IP</th>
+                        <th className="px-3 py-2 text-left font-medium">调用方</th>
+                        <th className="px-3 py-2 text-left font-medium">查询预览</th>
+                        <th className="px-3 py-2 text-right font-medium">耗时</th>
+                        <th className="px-3 py-2 text-center font-medium">状态</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {auditLogs?.items.map((log) => (
+                        <tr key={log.id} className="hover:bg-[var(--accent)]/50">
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-[var(--muted-foreground)]">
+                            {new Date(log.timestamp).toLocaleString('zh-CN')}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs">{log.source_ip || '-'}</td>
+                          <td className="px-3 py-2">
+                            <Badge variant={log.caller === 'mcp' ? 'default' : 'secondary'} className="text-xs">
+                              {log.caller}
+                            </Badge>
+                          </td>
+                          <td className="max-w-[300px] truncate px-3 py-2 font-mono text-xs" title={log.query}>
+                            {log.query}
+                          </td>
+                          <td className="px-3 py-2 text-right text-xs">
+                            {log.duration_ms != null ? `${log.duration_ms.toFixed(0)} ms` : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {log.status === 'ok' ? (
+                              <CheckCircle2 className="inline h-4 w-4 text-green-500" />
+                            ) : (
+                              <XCircle className="inline h-4 w-4 text-red-500" />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {(!auditLogs || auditLogs.items.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-[var(--muted-foreground)]">
+                            暂无审计记录
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {auditLogs && auditLogs.total > auditLogs.page_size && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    共 {auditLogs.total} 条，第 {auditPage} / {Math.ceil(auditLogs.total / auditLogs.page_size)} 页
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline" size="sm"
+                      disabled={auditPage <= 1}
+                      onClick={() => loadAudit(auditPage - 1, auditCaller, auditStatus)}
+                    >
+                      上一页
+                    </Button>
+                    <Button
+                      variant="outline" size="sm"
+                      disabled={auditPage >= Math.ceil(auditLogs.total / auditLogs.page_size)}
+                      onClick={() => loadAudit(auditPage + 1, auditCaller, auditStatus)}
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Tab 5: Data Card ─────────────────────── */}
+        <TabsContent value="datacard" className="space-y-4">
+          {datacardLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-[var(--muted-foreground)]" />
+            </div>
+          ) : datacard ? (
+            <>
+              {/* Ontology metadata */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>本体概览</CardTitle>
+                      <CardDescription>自动生成的本体元数据摘要</CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => loadDatacard()}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      刷新
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-[var(--muted-foreground)]">标题</p>
+                      <p className="font-medium">{datacard.ontology.title || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--muted-foreground)]">版本</p>
+                      <p className="font-medium">{datacard.ontology.version || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--muted-foreground)]">IRI</p>
+                      <p className="truncate font-mono text-xs">{datacard.ontology.iri || '-'}</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+                    生成时间: {new Date(datacard.generated_at).toLocaleString('zh-CN')} |
+                    最后更新: {datacard.last_updated ? new Date(datacard.last_updated).toLocaleString('zh-CN') : '-'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Statistics grid */}
+              <div className="grid grid-cols-5 gap-4">
+                <Card>
+                  <CardContent className="flex flex-col items-center p-4">
+                    <p className="text-2xl font-bold text-primary">{datacard.statistics.class_count}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">类</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="flex flex-col items-center p-4">
+                    <p className="text-2xl font-bold text-primary">{datacard.statistics.data_property_count}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">数据属性</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="flex flex-col items-center p-4">
+                    <p className="text-2xl font-bold text-primary">{datacard.statistics.object_property_count}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">对象属性</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="flex flex-col items-center p-4">
+                    <p className="text-2xl font-bold text-primary">{datacard.statistics.shacl_constraint_count}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">SHACL 约束</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="flex flex-col items-center p-4">
+                    <p className="text-2xl font-bold text-primary">{datacard.statistics.mapping_rule_count}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">映射规则</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Data source health */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">数据源健康状态</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3">
+                    {datacard.data_source_health.endpoint_reachable ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <span className="text-sm">
+                      SPARQL 端点 {datacard.data_source_health.endpoint_reachable ? '可达' : '不可达'}
+                    </span>
+                    <code className="text-xs text-[var(--muted-foreground)]">{datacard.data_source_health.endpoint_url}</code>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Class breakdown */}
+              {datacard.class_breakdown.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>类分布</CardTitle>
+                    <CardDescription>各类的属性数量</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-auto rounded-lg border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--muted)]/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">类名</th>
+                            <th className="px-3 py-2 text-right font-medium">属性数</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {datacard.class_breakdown.map((cls) => (
+                            <tr key={cls.name} className="hover:bg-[var(--accent)]/50">
+                              <td className="px-3 py-2">
+                                <code className="text-xs">{cls.name}</code>
+                                {cls.uri && (
+                                  <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">{cls.uri}</p>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-right">{cls.property_count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Instance estimates */}
+              {datacard.instance_estimates && Object.keys(datacard.instance_estimates).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>实例估算</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-3">
+                      {Object.entries(datacard.instance_estimates).map(([cls, count]) => (
+                        <div key={cls} className="rounded-lg border p-3">
+                          <code className="text-xs">{cls}</code>
+                          <p className="text-lg font-semibold">{count.toLocaleString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Export */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(JSON.stringify(datacard, null, 2), '数据卡片 JSON')}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  导出 JSON
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Database className="mb-3 h-10 w-10 text-[var(--muted-foreground)]" />
+                <p className="text-[var(--muted-foreground)]">暂无数据卡片</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => loadDatacard()}>
+                  加载数据卡片
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

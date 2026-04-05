@@ -1,13 +1,15 @@
 """SPARQL query center router."""
 import json
 import logging
+import time
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import Response
 
 from models.query import SparqlQueryRequest, ReformulateRequest, QueryHistoryEntry
 from services.ontop_endpoint import get_endpoint_status, ONTOP_ENDPOINT_URL
+from dependencies.auth import verify_api_key
 from repositories.query_history_repo import (
     list_history as repo_list_history,
     save_to_history as repo_save_history,
@@ -27,9 +29,14 @@ FORMAT_MAP = {
 
 
 @router.post("/query")
-async def execute_query(req: SparqlQueryRequest):
+async def execute_query(req: SparqlQueryRequest, request: Request, _auth=Depends(verify_api_key)):
     """Proxy SPARQL query to Ontop endpoint."""
+    source_ip = request.client.host if request.client else ""
     accept = FORMAT_MAP.get(req.format, "application/sparql-results+json")
+
+    t0 = time.perf_counter()
+    status = "ok"
+    error_message = ""
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -42,12 +49,27 @@ async def execute_query(req: SparqlQueryRequest):
                 },
             )
         except httpx.ConnectError:
-            raise HTTPException(503, "Ontop endpoint is not running")
+            status = "error"
+            error_message = "Ontop endpoint is not running"
+            repo_save_history(
+                req.query, source_ip=source_ip, caller="web",
+                duration_ms=(time.perf_counter() - t0) * 1000,
+                status=status, error_message=error_message,
+            )
+            raise HTTPException(503, error_message)
+
+    duration_ms = (time.perf_counter() - t0) * 1000
 
     if resp.status_code != 200:
-        raise HTTPException(resp.status_code, resp.text[:500])
+        status = "error"
+        error_message = resp.text[:500]
+        repo_save_history(
+            req.query, source_ip=source_ip, caller="web",
+            duration_ms=duration_ms, status=status, error_message=error_message,
+        )
+        raise HTTPException(resp.status_code, error_message)
 
-    # Save to history
+    # Count results
     result_count = None
     try:
         data = json.loads(resp.text)
@@ -55,7 +77,11 @@ async def execute_query(req: SparqlQueryRequest):
         result_count = len(bindings)
     except Exception:
         pass
-    repo_save_history(req.query, result_count)
+
+    repo_save_history(
+        req.query, result_count=result_count, source_ip=source_ip,
+        caller="web", duration_ms=round(duration_ms, 1),
+    )
 
     return Response(
         content=resp.content,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 
 # Add backend dir to Python path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -86,6 +86,15 @@ app.include_router(publishing.router, prefix="/api/v1")
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next) -> Response:
+    # MCP auth check for mounted ASGI sub-app
+    if request.url.path.startswith("/mcp"):
+        try:
+            from dependencies.auth import verify_api_key
+            await verify_api_key(request)
+        except Exception as e:
+            if hasattr(e, "status_code"):
+                return JSONResponse(status_code=e.status_code, content={"detail": str(e.detail) if hasattr(e, "detail") else str(e)})
+
     started = time.perf_counter()
     client_host = request.client.host if request.client else "-"
     logger.info("REQ  %s %s from=%s", request.method, request.url.path, client_host)
