@@ -46,7 +46,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # ── Next.js Frontend ─────────────────────────────────
+  # ── Next.js Frontend ──────────────────────────────────
   frontend-mysql:
     build:
       context: ./frontend
