@@ -8,12 +8,10 @@ import httpx
 
 from config import (
     ONTOP_CLI,
-    ONTOLOGY_FILE,
-    MAPPING_FILE,
-    PROPERTIES_FILE,
     ONTOP_ENDPOINT_URL,
     ONTOP_ENDPOINT_PORT,
 )
+from services.active_endpoint_config import load_active_endpoint_config, save_active_endpoint_config
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +34,10 @@ async def start_endpoint(
     if _endpoint_process and _endpoint_process.returncode is None:
         await stop_endpoint()
 
-    ontology_path = ontology_path or str(ONTOLOGY_FILE)
-    mapping_path = mapping_path or str(MAPPING_FILE)
-    properties_path = properties_path or str(PROPERTIES_FILE)
+    active_config = load_active_endpoint_config()
+    ontology_path = ontology_path or active_config["ontology_path"]
+    mapping_path = mapping_path or active_config["mapping_path"]
+    properties_path = properties_path or active_config["properties_path"]
 
     cmd = [
         str(ONTOP_CLI), "endpoint",
@@ -71,6 +70,14 @@ async def start_endpoint(
             decoded = line.decode("utf-8", errors="replace")
             startup_output += decoded
             if "Ontop virtual repository initialized" in decoded:
+                save_active_endpoint_config(
+                    {
+                        "ontology_path": ontology_path,
+                        "mapping_path": mapping_path,
+                        "properties_path": properties_path,
+                        "port": port,
+                    }
+                )
                 logger.info("Ontop endpoint started successfully")
                 return True, startup_output
             if "Exception" in decoded or "Error" in decoded:
@@ -101,12 +108,25 @@ async def stop_endpoint():
 
 async def get_endpoint_status() -> dict:
     """Check if the Ontop endpoint is alive."""
+    active_config = load_active_endpoint_config()
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{ONTOP_ENDPOINT_URL}/sparql", params={"query": "ASK { ?s ?p ?o }"})
-            return {"running": resp.status_code == 200, "port": ONTOP_ENDPOINT_PORT}
+            return {
+                "running": resp.status_code == 200,
+                "port": ONTOP_ENDPOINT_PORT,
+                "ontology_path": active_config["ontology_path"],
+                "mapping_path": active_config["mapping_path"],
+                "properties_path": active_config["properties_path"],
+            }
     except Exception:
-        return {"running": False, "port": ONTOP_ENDPOINT_PORT}
+        return {
+            "running": False,
+            "port": ONTOP_ENDPOINT_PORT,
+            "ontology_path": active_config["ontology_path"],
+            "mapping_path": active_config["mapping_path"],
+            "properties_path": active_config["properties_path"],
+        }
 
 
 def get_endpoint_process() -> Optional[asyncio.subprocess.Process]:

@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from models.mapping import MappingContent
 from services.llm_service import generate_sparql, generate_answer, build_sparql_prompt
 from services.obda_parser import parse_obda
-from config import ONTOP_ENDPOINT_URL, MAPPING_FILE, ONTOLOGY_FILE
+from config import ONTOP_ENDPOINT_URL
+from services.active_endpoint_config import load_active_endpoint_config
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -338,7 +339,9 @@ async def ontology_summary():
     """Get ontology schema summary for prompt context."""
     import re as re_mod
 
-    mapping_content = MAPPING_FILE.read_text(encoding="utf-8")
+    active_config = load_active_endpoint_config()
+    mapping_path = active_config["mapping_path"]
+    mapping_content = open(mapping_path, "r", encoding="utf-8").read()
     parsed = parse_obda(mapping_content)
 
     classes = set()
@@ -364,6 +367,16 @@ async def ontology_summary():
                 object_properties.add(local_name)
             else:
                 data_properties.add(local_name)
+
+        relation_matches = re_mod.findall(r'<([^>]+)>\s+<([^>]+)>\s+<([^>]+)>', target)
+        for _, predicate_uri, object_uri in relation_matches:
+            if predicate_uri.startswith("http://www.w3.org/") or predicate_uri.startswith("https://www.w3.org/"):
+                continue
+            if object_uri.startswith("http://www.w3.org/") or object_uri.startswith("https://www.w3.org/"):
+                continue
+            all_uris.add(predicate_uri)
+            local_name = predicate_uri.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+            object_properties.add(local_name)
 
     # Auto-detect ontology namespace
     namespaces: dict[str, str] = dict(parsed.prefixes)

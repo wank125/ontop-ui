@@ -27,7 +27,7 @@ import {
   History,
   TimerReset,
 } from 'lucide-react';
-import { sparql, type QueryHistoryEntry } from '@/lib/api';
+import { ai, sparql, type OntologySummary, type QueryHistoryEntry } from '@/lib/api';
 
 interface QueryHistory {
   id: string;
@@ -36,51 +36,93 @@ interface QueryHistory {
   resultCount: number;
 }
 
-const exampleQueries = [
-  {
-    label: '项目列表',
-    query: `PREFIX ex: <http://ontology.lvfa-property.com/v1/>
-SELECT ?project ?name ?region WHERE {
-  ?project a ex:PropertyProject ;
-           ex:projectName ?name ;
-           ex:region ?region .
+interface ExampleQuery {
+  label: string;
+  query: string;
 }
-LIMIT 20`,
-  },
-  {
-    label: '空间单元',
-    query: `PREFIX ex: <http://ontology.lvfa-property.com/v1/>
-SELECT ?space ?billingArea ?buildingArea WHERE {
-  ?space a ex:SpaceUnit ;
-         ex:billingArea ?billingArea ;
-         ex:buildingArea ?buildingArea .
-}
-LIMIT 20`,
-  },
-  {
-    label: '待缴账单',
-    query: `PREFIX ex: <http://ontology.lvfa-property.com/v1/>
-SELECT ?bill ?amount ?status WHERE {
-  ?bill a ex:Bill ;
-        ex:billAmount ?amount ;
-        ex:billStatus ?status .
-  FILTER(?status = "待缴")
-}
-LIMIT 20`,
-  },
-  {
-    label: '最近工单',
-    query: `PREFIX ex: <http://ontology.lvfa-property.com/v1/>
-SELECT ?workOrder ?status ?priority WHERE {
-  ?workOrder a ex:WorkOrder ;
-             ex:workOrderStatus ?status ;
-             ex:priority ?priority .
-}
-LIMIT 20`,
-  },
-];
 
-const defaultQuery = exampleQueries[0].query;
+const standardPrefixes = new Set(['rdf', 'rdfs', 'owl', 'xsd', 'obda']);
+
+function buildExampleQueries(summary: OntologySummary): ExampleQuery[] {
+  const prefix = Object.keys(summary.prefixes).find((key) => !standardPrefixes.has(key)) || 'cls';
+  const prefixUri = summary.prefixes[prefix] || 'http://example.com/ontology/';
+  const hasClass = (name: string) => summary.classes.includes(name);
+  const hasProp = (name: string) => summary.data_properties.includes(name);
+  const examples: ExampleQuery[] = [];
+
+  if (hasClass('PropertyProject') && hasProp('projectName') && hasProp('region')) {
+    examples.push({
+      label: '项目列表',
+      query: `PREFIX ${prefix}: <${prefixUri}>
+SELECT ?project ?name ?region WHERE {
+  ?project a ${prefix}:PropertyProject ;
+           ${prefix}:projectName ?name ;
+           ${prefix}:region ?region .
+}
+LIMIT 20`,
+    });
+  }
+
+  if (hasClass('SpaceUnit') && hasProp('billingArea') && hasProp('buildingArea')) {
+    examples.push({
+      label: '空间单元',
+      query: `PREFIX ${prefix}: <${prefixUri}>
+SELECT ?space ?billingArea ?buildingArea WHERE {
+  ?space a ${prefix}:SpaceUnit ;
+         ${prefix}:billingArea ?billingArea ;
+         ${prefix}:buildingArea ?buildingArea .
+}
+LIMIT 20`,
+    });
+  }
+
+  if (hasClass('Bill') && hasProp('amountDue') && hasProp('billStatus')) {
+    examples.push({
+      label: '账单状态',
+      query: `PREFIX ${prefix}: <${prefixUri}>
+SELECT ?bill ?amountDue ?status WHERE {
+  ?bill a ${prefix}:Bill ;
+        ${prefix}:amountDue ?amountDue ;
+        ${prefix}:billStatus ?status .
+}
+LIMIT 20`,
+    });
+  }
+
+  if (hasClass('WorkOrder') && hasProp('orderType') && hasProp('serviceFee')) {
+    examples.push({
+      label: '工单概览',
+      query: `PREFIX ${prefix}: <${prefixUri}>
+SELECT ?workOrder ?orderType ?serviceFee WHERE {
+  ?workOrder a ${prefix}:WorkOrder ;
+             ${prefix}:orderType ?orderType ;
+             ${prefix}:serviceFee ?serviceFee .
+}
+LIMIT 20`,
+    });
+  }
+
+  if (examples.length === 0 && summary.classes.length > 0) {
+    const className = summary.classes[0];
+    examples.push({
+      label: `${className} 列表`,
+      query: `PREFIX ${prefix}: <${prefixUri}>
+SELECT ?entity WHERE {
+  ?entity a ${prefix}:${className} .
+}
+LIMIT 20`,
+    });
+  }
+
+  if (examples.length === 0) {
+    examples.push({
+      label: '全部实体',
+      query: 'SELECT * WHERE { ?s ?p ?o } LIMIT 20',
+    });
+  }
+
+  return examples;
+}
 
 function SummaryCard({
   title,
@@ -110,7 +152,8 @@ function SummaryCard({
 }
 
 export default function SPARQLPage() {
-  const [query, setQuery] = useState(defaultQuery);
+  const [exampleQueries, setExampleQueries] = useState<ExampleQuery[]>([{ label: '全部实体', query: 'SELECT * WHERE { ?s ?p ?o } LIMIT 20' }]);
+  const [query, setQuery] = useState('SELECT * WHERE { ?s ?p ?o } LIMIT 20');
   const [isExecuting, setIsExecuting] = useState(false);
   const [columns, setColumns] = useState<string[]>([]);
   const [rows, setRows] = useState<Array<Record<string, string>>>([]);
@@ -120,12 +163,30 @@ export default function SPARQLPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastDurationMs, setLastDurationMs] = useState<number | null>(null);
   const [usedHistoryQuery, setUsedHistoryQuery] = useState(false);
-  const [lastQueryFingerprint, setLastQueryFingerprint] = useState(defaultQuery.trim());
+  const [lastQueryFingerprint, setLastQueryFingerprint] = useState('SELECT * WHERE { ?s ?p ?o } LIMIT 20');
   const [activeResultTab, setActiveResultTab] = useState('results');
+  const [sceneLabel, setSceneLabel] = useState('当前端点');
 
   useEffect(() => {
     void loadHistory();
+    void loadContext();
   }, []);
+
+  const loadContext = async () => {
+    try {
+      const [summary, endpoint] = await Promise.all([ai.ontologySummary(), sparql.endpointStatus()]);
+      const nextExamples = buildExampleQueries(summary);
+      setExampleQueries(nextExamples);
+      setQuery((current) => (current.trim() === 'SELECT * WHERE { ?s ?p ?o } LIMIT 20' ? nextExamples[0].query : current));
+      setLastQueryFingerprint((current) => (current.trim() === 'SELECT * WHERE { ?s ?p ?o } LIMIT 20' ? nextExamples[0].query.trim() : current));
+      const mappingPath = endpoint.mapping_path.toLowerCase();
+      if (mappingPath.includes('lvfa')) setSceneLabel('lvfa');
+      else if (mappingPath.includes('retail')) setSceneLabel('retail');
+      else setSceneLabel(endpoint.mapping_path.split('/').pop() || '当前端点');
+    } catch {
+      setExampleQueries([{ label: '全部实体', query: 'SELECT * WHERE { ?s ?p ?o } LIMIT 20' }]);
+    }
+  };
 
   const loadHistory = async () => {
     try {
@@ -213,12 +274,12 @@ export default function SPARQLPage() {
           </div>
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold text-foreground">SPARQL 查询</h1>
-            <p className="text-sm text-muted-foreground">围绕 lvfa 本体执行查询，并同步查看结果、SQL 改写和历史记录。</p>
+            <p className="text-sm text-muted-foreground">围绕当前活跃本体执行查询，并同步查看结果、SQL 改写和历史记录。</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary">
-            当前场景: lvfa
+            当前场景: {sceneLabel}
           </Badge>
           <Badge variant="outline" className="border-border/70 bg-card/70">
             最近执行: {lastDurationMs !== null ? `${lastDurationMs} ms` : '尚未执行'}
@@ -240,7 +301,7 @@ export default function SPARQLPage() {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <CardTitle className="text-base">查询编辑器</CardTitle>
-                  <CardDescription>默认示例已切换到 lvfa 业务场景，先从项目、账单、工单等实体开始。</CardDescription>
+                  <CardDescription>示例查询会根据当前活跃映射自动生成，优先从核心实体开始验证查询链路。</CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={handleCopy}>
@@ -325,10 +386,10 @@ export default function SPARQLPage() {
               <CardDescription>更接近业务工作台的常用提问入口。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <div className="rounded-xl bg-muted/20 p-4">
-                <p className="font-medium text-foreground">推荐从实体查起</p>
-                <p className="mt-2">先确认项目、空间、账单、工单这些核心类能查通，再逐步追加过滤和聚合。</p>
-              </div>
+                <div className="rounded-xl bg-muted/20 p-4">
+                  <p className="font-medium text-foreground">推荐从实体查起</p>
+                  <p className="mt-2">先确认当前活跃本体里的核心类能查通，再逐步追加过滤和聚合。</p>
+                </div>
               <div className="rounded-xl bg-primary/5 p-4">
                 <p className="font-medium text-foreground">SQL 改写要和结果一起看</p>
                 <p className="mt-2">SQL 不是附属抽屉，而是判断映射是否正确的重要证据，所以被提升到了结果区域的独立 tab。</p>
@@ -407,7 +468,7 @@ export default function SPARQLPage() {
               <CardContent className="flex min-h-[220px] items-center justify-center">
                 <div className="text-center text-muted-foreground">
                   <Code2 className="mx-auto mb-3 h-12 w-12 opacity-50" />
-                  <p>执行 lvfa 示例查询后在这里查看结果。</p>
+                  <p>执行当前活跃本体的示例查询后在这里查看结果。</p>
                 </div>
               </CardContent>
             </Card>

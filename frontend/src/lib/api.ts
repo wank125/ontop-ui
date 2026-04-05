@@ -159,7 +159,7 @@ export const sparql = {
   deleteHistory: (id: string) =>
     api<void>(`/sparql/history/${id}`, { method: 'DELETE' }),
   endpointStatus: () =>
-    api<{ running: boolean; port: number }>('/sparql/endpoint-status'),
+    api<{ running: boolean; port: number; ontology_path: string; mapping_path: string; properties_path: string }>('/sparql/endpoint-status'),
 };
 
 // ── Ontology (TTL) ────────────────────────────────────
@@ -267,6 +267,13 @@ export interface QuickQuestion {
   question: string;
 }
 
+export interface OntologySummary {
+  classes: string[];
+  data_properties: string[];
+  object_properties: string[];
+  prefixes: Record<string, string>;
+}
+
 export interface ProviderPreset {
   label: string;
   base_url: string;
@@ -346,9 +353,7 @@ export const workbench = {
 
 export const ai = {
   ontologySummary: () =>
-    api<{ classes: string[]; data_properties: string[]; object_properties: string[]; prefixes: Record<string, string> }>(
-      '/ai/ontology-summary',
-    ),
+    api<OntologySummary>('/ai/ontology-summary'),
   streamQuery: async function* (question: string): AsyncGenerator<AIStep> {
     const res = await fetch(`${API_BASE}/ai/query?question=${encodeURIComponent(question)}`);
     if (!res.ok) throw new Error(`AI query failed: ${res.statusText}`);
