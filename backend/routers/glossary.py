@@ -131,7 +131,7 @@ async def generate_glossary(ds_id: str, background_tasks: BackgroundTasks):
         except Exception as e:
             logger.error("glossary generate failed: ds_id=%s, error=%s", ds_id, e)
 
-    background_tasks.add_task(asyncio.create_task, _run())
+    background_tasks.add_task(_run)
     return {
         "message": "词汇生成任务已启动（后台运行）",
         "accepted_annotations": zh_count,

@@ -80,62 +80,50 @@ export default function AnnotationsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
-      <div className="rounded-3xl border border-border/70 bg-card/60 p-6 shadow-[0_24px_80px_-40px_rgba(124,58,237,0.45)] backdrop-blur">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/20">
-                <Tags className="h-5 w-5 text-violet-400" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">语义标注管理</h1>
-                <p className="text-sm text-muted-foreground">
-                  审核 LLM 生成的本体语义，确认后合并到 active ontology，供 AI 与查询页面复用。
-                </p>
-              </div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Tags className="h-5 w-5" />
             </div>
-
-            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-              <div className="rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2">
-                <span className="font-medium text-foreground">1. 自动生成</span>
-                <div className="mt-1">Bootstrap 后自动创建候选标注</div>
-              </div>
-              <div className="rounded-xl border border-sky-500/15 bg-sky-500/5 px-3 py-2">
-                <span className="font-medium text-foreground">2. 人工审核</span>
-                <div className="mt-1">支持逐条编辑、批量接受或拒绝</div>
-              </div>
-              <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2">
-                <span className="font-medium text-foreground">3. 合并生效</span>
-                <div className="mt-1">accepted 标注写入 active TTL，不覆盖人工结果</div>
-              </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">语义标注管理</h1>
+              <p className="text-sm text-muted-foreground">
+                审核 LLM 生成的本体语义标注，并在确认后合并到 active ontology。
+              </p>
             </div>
           </div>
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border/70 bg-card/60 px-3 py-1.5">Bootstrap 后自动生成候选标注</span>
+            <span className="rounded-full border border-border/70 bg-card/60 px-3 py-1.5">支持批量接受 / 拒绝 / 编辑</span>
+            <span className="rounded-full border border-border/70 bg-card/60 px-3 py-1.5">人工标注不会被 Bootstrap 覆盖</span>
+          </div>
+        </div>
 
-          <div className="w-full max-w-sm rounded-2xl border border-border/70 bg-background/40 p-4">
-            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+        <Card className="w-full max-w-sm border-border/70 bg-card/70">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
               <Database className="h-3.5 w-3.5" />
               当前上下文
             </div>
-            <div className="space-y-3">
-              <Select value={dsId} onValueChange={setDsId} disabled={loading}>
-                <SelectTrigger className="w-full bg-[var(--card)] border-[var(--border)]">
-                  <SelectValue placeholder="选择数据源…" />
-                </SelectTrigger>
-                <SelectContent className="bg-[var(--card)] border-[var(--border)]">
-                  {dsList.map(ds => (
-                    <SelectItem key={ds.id} value={ds.id}>
-                      {ds.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="rounded-xl border border-border/70 bg-card/60 px-3 py-2">
-                <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Host</div>
-                <div className="mt-1 font-mono text-sm text-foreground">{hostLabel}</div>
-              </div>
+            <Select value={dsId} onValueChange={setDsId} disabled={loading}>
+              <SelectTrigger className="w-full bg-background border-[var(--border)]">
+                <SelectValue placeholder="选择数据源…" />
+              </SelectTrigger>
+              <SelectContent className="bg-[var(--card)] border-[var(--border)]">
+                {dsList.map(ds => (
+                  <SelectItem key={ds.id} value={ds.id}>
+                    {ds.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="space-y-1 rounded-xl border border-border/70 bg-background/60 px-3 py-2">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Host</div>
+              <div className="font-mono text-sm text-foreground">{hostLabel}</div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -163,6 +151,11 @@ export default function AnnotationsPage() {
           hint="当前数据源累计标注总数"
           icon={GitMerge}
         />
+      </div>
+
+      <div className="rounded-2xl border border-border/70 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">工作流：</span>
+        先由 LLM 生成候选标注，再人工审核，最后将 accepted 标注合并到 active TTL 供查询与 AI 页面使用。
       </div>
 
       {/* Panel */}

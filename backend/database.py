@@ -166,6 +166,43 @@ CREATE TABLE IF NOT EXISTS business_glossary (
 CREATE INDEX IF NOT EXISTS idx_glossary_ds   ON business_glossary(ds_id);
 CREATE INDEX IF NOT EXISTS idx_glossary_term ON business_glossary(term);
 
+-- 端点注册表：记录每个数据源 Bootstrap 产物的存储位置和激活状态
+-- is_current=1 表示当前激活（唯一），切换时更新
+CREATE TABLE IF NOT EXISTS endpoint_registry (
+    id              TEXT PRIMARY KEY,
+    ds_id           TEXT NOT NULL UNIQUE,
+    ds_name         TEXT NOT NULL,
+    active_dir      TEXT NOT NULL,        -- 该数据源的 active 文件目录（绝对路径）
+    ontology_path   TEXT NOT NULL DEFAULT '',
+    mapping_path    TEXT NOT NULL DEFAULT '',
+    properties_path TEXT NOT NULL DEFAULT '',
+    endpoint_url    TEXT NOT NULL DEFAULT '',   -- 空表示使用系统默认端点
+    last_bootstrap  TEXT,                 -- 最近一次 Bootstrap 时间戳
+    is_current      INTEGER NOT NULL DEFAULT 0, -- 只有一行为 1
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_endpoint_current ON endpoint_registry(is_current);
+
+-- 本体精化建议：LLM 分析本体结构后给出的命名/类型/层次改进建议
+CREATE TABLE IF NOT EXISTS ontology_suggestions (
+    id            TEXT PRIMARY KEY,
+    ds_id         TEXT NOT NULL,
+    type          TEXT NOT NULL,               -- RENAME_CLASS / RENAME_PROPERTY / ADD_SUBCLASS / REFINE_TYPE / ADD_LABEL
+    current_val   TEXT NOT NULL,               -- 当前值（类名 / 属性名 / XSD 类型）
+    proposed_val  TEXT NOT NULL,               -- 建议值
+    reason        TEXT NOT NULL DEFAULT '',    -- LLM 给出的理由
+    priority      TEXT NOT NULL DEFAULT 'medium',   -- high / medium / low
+    auto_apply    INTEGER NOT NULL DEFAULT 0,  -- 1=可自动应用到 TTL
+    status        TEXT NOT NULL DEFAULT 'pending',  -- pending / accepted / rejected / applied
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sug_ds     ON ontology_suggestions(ds_id, status);
+CREATE INDEX IF NOT EXISTS idx_sug_type   ON ontology_suggestions(ds_id, type);
+
 """
 
 

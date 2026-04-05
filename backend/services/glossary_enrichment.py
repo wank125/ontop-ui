@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-async def generate_glossary_from_annotations(ds_id: str, batch_size: int = 25) -> int:
+async def generate_glossary_from_annotations(ds_id: str, batch_size: int = 15) -> int:
     """从语义注释层推导业务词汇，写入 business_glossary 表。
 
     Args:
@@ -111,12 +111,20 @@ async def _call_llm_for_glossary(
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.3,
-            max_tokens=2048,
+            max_tokens=4096,
         )
         raw = response.choices[0].message.content.strip()
         if raw.startswith("```"):
             raw = "\n".join(raw.split("\n")[1:-1]).strip()
+        # Extract JSON array from response (LLM may add extra text)
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start >= 0 and end > start:
+            raw = raw[start:end + 1]
+        # Fix common LLM JSON issues: trailing commas before } or ]
+        import re
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)
         return json.loads(raw)
     except Exception as e:
-        logger.warning("_call_llm_for_glossary failed: %s", e)
+        logger.warning("_call_llm_for_glossary failed: %s (raw=%s...)", e, raw[:200] if 'raw' in dir() else 'N/A')
         return []

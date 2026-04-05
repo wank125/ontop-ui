@@ -680,4 +680,101 @@ export const glossary = {
     }),
 };
 
+// ── Endpoint Registry ─────────────────────────────────────
+
+export interface EndpointRegistration {
+  id:              string;
+  ds_id:           string;
+  ds_name:         string;
+  active_dir:      string;
+  ontology_path:   string;
+  mapping_path:    string;
+  properties_path: string;
+  endpoint_url:    string;
+  last_bootstrap:  string | null;
+  is_current:      number;   // 1 = active
+  created_at:      string;
+  updated_at:      string | null;
+}
+
+export const endpointRegistry = {
+  list: () =>
+    api<EndpointRegistration[]>('/endpoint-registry'),
+
+  current: () =>
+    api<EndpointRegistration | { message: string; current: null }>('/endpoint-registry/current'),
+
+  activate: (dsId: string) =>
+    api<{ message: string; ds_id: string; note: string }>(
+      `/endpoint-registry/${dsId}/activate`,
+      { method: 'PUT' },
+    ),
+};
+
+// ── Ontology Suggestions ─────────────────────────────────
+
+export type SuggestionType     = 'RENAME_CLASS' | 'RENAME_PROPERTY' | 'ADD_SUBCLASS' | 'REFINE_TYPE' | 'ADD_LABEL';
+export type SuggestionPriority = 'high' | 'medium' | 'low';
+export type SuggestionStatus   = 'pending' | 'accepted' | 'rejected' | 'applied';
+
+export interface OntologySuggestion {
+  id:           string;
+  ds_id:        string;
+  type:         SuggestionType;
+  current_val:  string;
+  proposed_val: string;
+  reason:       string;
+  priority:     SuggestionPriority;
+  auto_apply:   boolean;
+  status:       SuggestionStatus;
+  created_at:   string;
+  updated_at:   string | null;
+}
+
+export interface SuggestionStats {
+  pending:  number;
+  accepted: number;
+  rejected: number;
+  applied:  number;
+  total:    number;
+}
+
+export const suggestions = {
+  analyze: (dsId: string) =>
+    api<{ message: string; ds_id: string }>(
+      `/suggestions/${dsId}/analyze`,
+      { method: 'POST' },
+    ),
+
+  list: (dsId: string, params?: { status?: SuggestionStatus; type?: SuggestionType; priority?: SuggestionPriority }) => {
+    const q = new URLSearchParams();
+    if (params?.status)   q.set('status', params.status);
+    if (params?.type)     q.set('type', params.type);
+    if (params?.priority) q.set('priority', params.priority);
+    const qs = q.toString() ? `?${q}` : '';
+    return api<OntologySuggestion[]>(`/suggestions/${dsId}${qs}`);
+  },
+
+  stats: (dsId: string) =>
+    api<SuggestionStats>(`/suggestions/${dsId}/stats`),
+
+  updateStatus: (dsId: string, sugId: string, status: SuggestionStatus) =>
+    api<OntologySuggestion>(`/suggestions/${dsId}/${sugId}/status`, {
+      method: 'PUT',
+      body:   JSON.stringify({ status }),
+    }),
+
+  apply: (dsId: string, sugId: string) =>
+    api<{ success: boolean; message: string }>(`/suggestions/${dsId}/${sugId}/apply`, {
+      method: 'POST',
+    }),
+
+  batchApply: (dsId: string) =>
+    api<{ applied: number; skipped: number; results: Array<{ id: string; type: string; success: boolean; message: string }> }>(
+      `/suggestions/${dsId}/batch-apply`,
+      { method: 'POST' },
+    ),
+};
+
+
 

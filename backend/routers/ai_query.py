@@ -619,17 +619,16 @@ async def ontology_summary():
     # ── Step 6: 加载业务词汇表（注入 SPARQL Prompt）────────────────
     glossary_terms: list[dict] = []
     try:
-        from repositories.glossary_repo import list_terms
-        mapping_path = active.get("mapping_path", "")
-        ds_id = ""
-        if mapping_path:
-            from pathlib import Path as _Path
-            parts = _Path(mapping_path).parts
-            for idx, part in enumerate(parts):
-                if part == "data" and idx + 1 < len(parts):
-                    ds_id = parts[idx + 1]
-                    break
-        glossary_terms = list_terms(ds_id, include_global=True)
+        from repositories.glossary_repo import list_terms as _list_glossary
+        # Reuse ds_id from Step 1 (already resolved), fallback to first datasource
+        _gid = ds_id
+        if not _gid:
+            from database import get_connection
+            _row = get_connection().execute("SELECT id FROM datasources LIMIT 1").fetchone()
+            if _row:
+                _gid = _row["id"]
+        if _gid:
+            glossary_terms = _list_glossary(_gid, include_global=True)
     except Exception as _ge:
         logger.warning("Failed to load glossary: %s", _ge)
 

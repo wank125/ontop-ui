@@ -296,7 +296,7 @@ export default function GlossaryPage() {
               ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
               : <Sparkles className="h-4 w-4 mr-1.5" />
             }
-            🤖 自动生成
+            自动生成
           </Button>
           <Button
             size="sm"

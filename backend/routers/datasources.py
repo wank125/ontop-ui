@@ -29,6 +29,7 @@ from repositories.datasource_repo import (
     update_datasource as repo_update,
     delete_datasource as repo_delete,
 )
+from repositories.endpoint_registry_repo import register_datasource as register_endpoint
 
 router = APIRouter(prefix="/datasources", tags=["datasources"])
 
@@ -205,6 +206,18 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
         )
 
     asyncio.create_task(_enrich_then_merge())
+
+    # 登记和内部端点注册表——让用户可以切换激活数据源
+    ds_record = repo_get(ds_id)
+    register_endpoint(
+        ds_id=ds_id,
+        ds_name=ds_record.name if ds_record else ds_id,
+        active_dir=str(active_dir),
+        ontology_path=onto_path,
+        mapping_path=mapping_path,
+        properties_path=str(props_path),
+        set_current=False,   # 不自动切换，由用户手动选择
+    )
 
     return {
         "version": version,
