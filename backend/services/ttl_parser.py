@@ -377,6 +377,7 @@ def _parse_shacl_sparql(pred_objs: dict) -> list[ShaclSparqlConstraint]:
 def parse_ttl(content: str) -> TtlOntology:
     """Parse a Turtle ontology file into structured data."""
     ontology = TtlOntology()
+    pending_annotations: list[tuple[str, dict]] = []
 
     # Detect domain sections from comments
     current_domain = ""
@@ -468,5 +469,30 @@ def parse_ttl(content: str) -> TtlOntology:
                 properties=props,
                 sparql_constraints=sparqls,
             ))
+        elif pred_objs.get('rdfs:label') or pred_objs.get('rdfs:comment'):
+            pending_annotations.append((subject, pred_objs))
+
+    if pending_annotations:
+        class_by_local = {item.local_name: item for item in ontology.classes}
+        data_by_local = {item.local_name: item for item in ontology.data_properties}
+        object_by_local = {item.local_name: item for item in ontology.object_properties}
+
+        for subject, pred_objs in pending_annotations:
+            local = _local_name(subject)
+            labels = _extract_labels(pred_objs)
+            comments = _extract_comments(pred_objs)
+
+            target = class_by_local.get(local) or data_by_local.get(local) or object_by_local.get(local)
+            if not target:
+                continue
+
+            if labels.zh:
+                target.labels.zh = labels.zh
+            if labels.en:
+                target.labels.en = labels.en
+            if comments.zh:
+                target.comments.zh = comments.zh
+            if comments.en:
+                target.comments.en = comments.en
 
     return ontology

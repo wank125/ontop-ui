@@ -9,6 +9,7 @@ from models.publishing import PublishingConfigUpdate
 from repositories.publishing_repo import load_publishing_config, update_publishing_config
 from services.publishing_generator import (
     get_ontology_tools,
+    get_ontology_classes_summary,
     generate_claude_desktop_config,
     generate_cursor_config,
     generate_openai_function_tools,
@@ -101,6 +102,12 @@ async def mcp_stop():
 async def mcp_tools():
     """List available MCP tools derived from ontology."""
     return get_ontology_tools()
+
+
+@router.get("/classes")
+async def publishing_classes():
+    """Return ontology classes with their bound properties for MCP verification."""
+    return get_ontology_classes_summary()
 
 
 @router.get("/mcp/config-snippet")

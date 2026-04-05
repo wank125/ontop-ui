@@ -119,7 +119,8 @@ ontop-ui/
 │   ├── frontend/Dockerfile     # 前端镜像
 │   └── postgres/               # 数据库初始化 SQL
 ├── docker-compose.yml          # 默认环境（retail）
-├── docker-compose.lvfa.yml     # LVFA 演示环境
+├── docker-compose.lvfa.yml     # LVFA / Mondial 演示环境
+├── docker-compose.mysql.yml    # MySQL 电商演示环境
 └── docs/
     ├── test-plan.md            # 页面测试计划
     └── screenshots/            # 测试截图
@@ -130,30 +131,51 @@ ontop-ui/
 ### 前置条件
 
 - Docker & Docker Compose
-- Java 11+（Ontop 运行需要）
 - LM Studio 或其他 OpenAI 兼容服务（AI 查询功能，可选）
 
 ### 一键启动（推荐）
 
 ```bash
-# 启动所有服务（PostgreSQL + Backend + Frontend）
+# 默认 retail 环境
+docker compose up -d --build
+
+# LVFA / Mondial 演示环境
 docker compose -f docker-compose.lvfa.yml up -d --build
 
+# MySQL 电商演示环境
+docker compose -f docker-compose.mysql.yml up -d --build
+
 # 访问
-# 前端: http://localhost:3001
-# 后端 API: http://localhost:8001/docs
-# PostgreSQL: localhost:5436 (admin/test123)
+# 默认前端: http://localhost:3000
+# 默认后端 API: http://localhost:8000/docs
+# 默认 PostgreSQL: localhost:5435 (admin/test123)
+#
+# LVFA 前端: http://localhost:3001
+# LVFA 后端 API: http://localhost:8001/docs
+# LVFA PostgreSQL: localhost:5436 (admin/test123)
+#
+# MySQL 前端: http://localhost:3002
+# MySQL 后端 API: http://localhost:8002/docs
+# MySQL DB: localhost:3307 (root/test123)
 ```
 
 ### 手动启动（开发模式）
 
-**1. 启动 PostgreSQL**
+**1. 启动 Demo 数据库**
 
 ```bash
 docker compose -f docker-compose.lvfa.yml up -d postgres-lvfa
 ```
 
-**2. 启动后端**
+**2. 启动 `ontop-engine`**
+
+```bash
+cd ../ontop-engine
+docker build -t ontop-engine:local .
+docker run --rm -p 8081:8081 ontop-engine:local
+```
+
+**3. 启动后端**
 
 ```bash
 cd backend
@@ -161,7 +183,7 @@ pip install -r requirements.txt
 python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-**3. 启动前端**
+**4. 启动前端**
 
 ```bash
 cd frontend
@@ -169,7 +191,7 @@ pnpm install
 pnpm dev --port 3001
 ```
 
-**4. 访问**
+**5. 访问**
 
 浏览器打开 http://localhost:3001
 
@@ -179,15 +201,33 @@ pnpm dev --port 3001
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `ONTOP_CLI` | `./docker/ontop-cli/ontop` | Ontop CLI 路径 |
 | `ONTOP_OUTPUT` | `./docker/backend/ontop-output` | 映射/本体文件目录 |
 | `ONTOP_ENDPOINT_PORT` | `8080` | SPARQL 端点端口 |
+| `ONTOP_ENDPOINT_URL` | `http://localhost:8080` | 在线查询 endpoint 地址 |
+| `ONTOP_ENDPOINT_ADMIN_URL` | `http://localhost:8080` | endpoint 管理地址 |
+| `ONTOP_ENGINE_URL` | `http://localhost:8081` | Native Java Ontop Builder API 地址 |
+| `ONTOP_ENDPOINT_ACTIVE_DIR` | `/opt/ontop-endpoint/active` | endpoint 当前激活文件目录 |
 | `LLM_BASE_URL` | `http://localhost:1234/v1` | LLM API 地址 |
 | `LLM_MODEL` | `zai-org/glm-4.7-flash` | LLM 模型名 |
 | `LLM_API_KEY` | `lm-studio` | LLM API Key |
 | `FASTAPI_PORT` | `8000` | 后端端口 |
 
 前端通过 `BACKEND_URL` 环境变量指定后端地址（Docker 内默认 `http://backend:8000`）。
+
+### 当前 Docker 架构
+
+现在三套 Compose 都遵循同一套微服务边界：
+
+- `frontend` / `frontend-lvfa` / `frontend-mysql`：Next.js 前端
+- `backend` / `backend-lvfa` / `backend-mysql`：FastAPI 业务编排层
+- `ontop-engine*`：独立 Java Builder 服务，负责 metadata / bootstrap / validate
+- `ontop-endpoint*`：独立 Java SPARQL Endpoint，负责 `/sparql`、`/ontop/reformulate`、`/ontop/restart`
+
+其中：
+
+- 默认环境端口：`3000 / 8000 / 8081 / 18080`
+- LVFA 环境端口：`3001 / 8001 / 8083 / 18081`
+- MySQL 环境端口：`3002 / 8002 / 8084 / 18082`
 
 ## API 概览
 

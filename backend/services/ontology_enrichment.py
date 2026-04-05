@@ -46,7 +46,10 @@ def _extract_unlabeled_entities(ttl_content: str) -> dict[str, list[str]]:
         if not subj_match:
             continue
         subject = subj_match.group(1).strip("<>")
-        local = subject.rsplit("/", 1)[-1].rsplit("#", 1)[-1].rstrip(">")
+        if ":" in subject and not subject.startswith("http"):
+            local = subject.split(":", 1)[1]
+        else:
+            local = subject.rsplit("/", 1)[-1].rsplit("#", 1)[-1].rstrip(">")
         if not local or local.startswith("_"):
             continue
 
@@ -122,7 +125,12 @@ def _build_label_triples(labels: list[dict], ttl_prefix: str) -> str:
         label_en = item.get("label_en", "").replace('"', '\\"')
         comment_zh = item.get("comment_zh", "").replace('"', '\\"')
         comment_en = item.get("comment_en", "").replace('"', '\\"')
-        subject = f"{ttl_prefix}:{name}" if ttl_prefix else f"<{name}>"
+        if ttl_prefix == ":":
+            subject = f":{name}"
+        elif ttl_prefix:
+            subject = f"{ttl_prefix}:{name}"
+        else:
+            subject = f"<{name}>"
         block = [f"\n{subject}"]
         if label_zh:
             block.append(f'    rdfs:label "{label_zh}"@zh')

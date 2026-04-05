@@ -1,5 +1,5 @@
 services:
-  # ── PostgreSQL（绿发物业 Demo）─────────────────────────
+  # ── PostgreSQL（LVFA / Mondial Demo）──────────────────
   postgres-lvfa:
     image: postgres:16-alpine
     container_name: ontop-lvfa-db
@@ -18,7 +18,41 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── FastAPI Backend（复用现有镜像）─────────────────────
+  # ── Native Java Ontop Builder API（LVFA）──────────────
+  ontop-engine-lvfa:
+    build:
+      context: ../ontop-engine
+      dockerfile: Dockerfile
+    container_name: ontop-engine-lvfa
+    depends_on:
+      postgres-lvfa:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx2g"
+    ports:
+      - "8083:8081"
+
+  # ── Dedicated Ontop SPARQL Endpoint（LVFA）────────────
+  ontop-endpoint-lvfa:
+    build:
+      context: .
+      dockerfile: ./docker/endpoint/Dockerfile
+    container_name: ontop-endpoint-lvfa
+    depends_on:
+      postgres-lvfa:
+        condition: service_healthy
+    environment:
+      ONTOP_ACTIVE_DIR: /opt/ontop-endpoint/active
+      ONTOP_ACTIVE_ONTOLOGY_FILE: /opt/ontop-endpoint/active/active_ontology.ttl
+      ONTOP_ACTIVE_MAPPING_FILE: /opt/ontop-endpoint/active/active_mapping.obda
+      ONTOP_ACTIVE_PROPERTIES_FILE: /opt/ontop-endpoint/active/active.properties
+      ONTOP_ENDPOINT_PORT: "8080"
+    ports:
+      - "18081:8080"
+    volumes:
+      - ./docker/endpoint/lvfa-active:/opt/ontop-endpoint/active
+
+  # ── FastAPI Backend（LVFA）────────────────────────────
   backend-lvfa:
     build:
       context: ./backend
@@ -27,27 +61,37 @@ services:
     depends_on:
       postgres-lvfa:
         condition: service_healthy
+      ontop-engine-lvfa:
+        condition: service_started
+      ontop-endpoint-lvfa:
+        condition: service_started
     environment:
-      ONTOP_CLI: /opt/ontop-cli/ontop
       ONTOP_OUTPUT: /opt/ontop-output
       ONTOLOGY_FILE: /opt/ontop-output/lvfa_ontology.ttl
       MAPPING_FILE: /opt/ontop-output/lvfa_mapping.obda
       PROPERTIES_FILE: /opt/ontop-output/lvfa.properties
-      ONTOP_ENDPOINT_URL: http://localhost:8081
-      ONTOP_ENDPOINT_PORT: "8081"
+      ONTOP_ENDPOINT_URL: http://ontop-endpoint-lvfa:8080
+      ONTOP_ENDPOINT_ADMIN_URL: http://ontop-endpoint-lvfa:8080
+      ONTOP_ENDPOINT_PORT: "8080"
+      ONTOP_ENDPOINT_ACTIVE_DIR: /opt/ontop-endpoint/active
+      ONTOP_ENDPOINT_ACTIVE_ONTOLOGY_FILE: /opt/ontop-endpoint/active/active_ontology.ttl
+      ONTOP_ENDPOINT_ACTIVE_MAPPING_FILE: /opt/ontop-endpoint/active/active_mapping.obda
+      ONTOP_ENDPOINT_ACTIVE_PROPERTIES_FILE: /opt/ontop-endpoint/active/active.properties
+      ONTOP_ENGINE_URL: http://ontop-engine-lvfa:8081
       FASTAPI_PORT: "8000"
       LLM_BASE_URL: http://host.docker.internal:1234/v1
       LLM_MODEL: zai-org/glm-4.7-flash
     ports:
       - "8001:8000"
     volumes:
-      - ./docker/ontop-cli:/opt/ontop-cli:ro
       - ./docker/backend/ontop-output:/opt/ontop-output
+      - ./backend/data-lvfa:/app/data
+      - ./docker/endpoint/lvfa-active:/opt/ontop-endpoint/active
       - ./docker/backend/ontop-lvfa.properties:/opt/ontop-output/lvfa.properties:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # ── Next.js Frontend（复用现有镜像）────────────────────
+  # ── Next.js Frontend（LVFA）───────────────────────────
   frontend-lvfa:
     build:
       context: ./frontend
