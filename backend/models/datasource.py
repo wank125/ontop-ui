@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 
 class DataSourceBase(BaseModel):
@@ -33,3 +33,7 @@ class DataSource(DataSourceBase):
 class BootstrapRequest(BaseModel):
     base_iri: str = "http://example.com/ontop/"
     output_dir: Optional[str] = None
+    mode: Literal["full", "partial"] = "full"
+    tables: list[str] = Field(default_factory=list)
+    include_dependencies: bool = True
+    activate_after_generate: bool = False

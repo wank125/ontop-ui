@@ -1,0 +1,6 @@
+{
+  "ontology_path": "/opt/ontop-output/lvfa_ontology.ttl",
+  "mapping_path": "/opt/ontop-output/lvfa_mapping.obda",
+  "properties_path": "/opt/ontop-output/lvfa.properties",
+  "port": 8080
+}

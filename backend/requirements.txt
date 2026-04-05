@@ -4,3 +4,6 @@ httpx>=0.28.0
 pydantic>=2.10.0
 openai>=2.21.0
 sse-starlette>=2.0.0
+cryptography>=42.0.0
+mcp>=1.0.0
+rdflib>=7.0.0
