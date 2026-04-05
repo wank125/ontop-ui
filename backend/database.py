@@ -124,6 +124,27 @@ CREATE TABLE IF NOT EXISTS publishing_config (
     created_at TEXT NOT NULL,
     updated_at TEXT
 );
+
+-- 语义注释层：与 TTL 文件解耦的独立标注存储
+-- LLM 自动生成（status=pending）+ 人工审核（accepted/rejected）
+-- Bootstrap 重跑时 pending 的被替换，accepted/rejected 的永久保留
+CREATE TABLE IF NOT EXISTS semantic_annotations (
+    id          TEXT PRIMARY KEY,
+    ds_id       TEXT NOT NULL,
+    entity_uri  TEXT NOT NULL,
+    entity_kind TEXT NOT NULL,        -- 'class' | 'data_property' | 'object_property'
+    lang        TEXT NOT NULL DEFAULT 'zh',
+    label       TEXT NOT NULL DEFAULT '',
+    comment     TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT 'llm',     -- 'llm' | 'human'
+    status      TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'accepted' | 'rejected'
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT,
+    UNIQUE(ds_id, entity_uri, lang)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ann_ds     ON semantic_annotations(ds_id, status);
+CREATE INDEX IF NOT EXISTS idx_ann_entity ON semantic_annotations(ds_id, entity_uri);
 """
 
 

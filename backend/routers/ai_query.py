@@ -466,16 +466,54 @@ async def ontology_summary():
     ontology_path = active_config.get("ontology_path", "")
     mapping_path = active_config.get("mapping_path", "")
 
-    # ── Step 1: 解析 TTL，提取带语义标注的类/属性 ──────────────────
-    ttl_classes: dict[str, dict] = {}          # local_name -> {label_zh,label_en,comment_zh}
+    # ── Step 1: 优先从注释库读取 accepted 标注，TTL 作为降级备选 ─────
+    # 注释库是语义标注层的权威来源（Bootstrap 重跑不会丢失人工审核结果）
+    # TTL parser 在注释库无数据时（如首次运行）降级使用
+    from repositories import annotation_repo as ann_repo
+    from services.ttl_parser import parse_ttl
+
+    # 推断 ds_id（从 mapping_path 路径中提取 DATA_DIR/{ds_id}/...）
+    ds_id: str | None = None
+    if mapping_path:
+        try:
+            from config import DATA_DIR as _DATA_DIR
+            rel = Path(mapping_path).relative_to(_DATA_DIR)
+            ds_id = rel.parts[0]
+        except Exception:
+            pass
+
+    ttl_classes: dict[str, dict] = {}
     ttl_data_props: dict[str, dict] = {}
     ttl_obj_props: dict[str, dict] = {}
 
-    if ontology_path and Path(ontology_path).exists():
+    if ds_id:
+        # 优先：从注释库的 accepted 条目构建语义上下文
+        accepted_annotations = ann_repo.list_annotations(ds_id, status="accepted")
+        for ann in accepted_annotations:
+            uri   = ann["entity_uri"]
+            lang  = ann["lang"]
+            kind  = ann["entity_kind"]
+            label = ann.get("label", "")
+            comment = ann.get("comment", "")
+
+            if kind == "class":
+                entry = ttl_classes.setdefault(uri, {})
+            elif kind == "data_property":
+                entry = ttl_data_props.setdefault(uri, {})
+            else:
+                entry = ttl_obj_props.setdefault(uri, {})
+
+            if lang == "zh":
+                entry["label_zh"] = label
+                entry["comment_zh"] = comment
+            elif lang == "en":
+                entry["label_en"] = label
+
+    # 降级：如果注释库为空，解析 TTL 文件（向前兼容旧数据）
+    if not ttl_classes and not ttl_data_props and ontology_path and Path(ontology_path).exists():
         try:
             ttl_content = Path(ontology_path).read_text(encoding="utf-8")
-            parsed_ttl = parse_ttl(ttl_content)
-
+            parsed_ttl  = parse_ttl(ttl_content)
             for cls in parsed_ttl.classes:
                 ttl_classes[cls.local_name] = {
                     "label_zh": cls.labels.zh,
@@ -494,7 +532,8 @@ async def ontology_summary():
                     "label_en": op.labels.en,
                 }
         except Exception as e:
-            logger.warning("ontology_summary: failed to parse TTL %s: %s", ontology_path, e)
+            logger.warning("ontology_summary: TTL fallback parse failed %s: %s", ontology_path, e)
+
 
     # ── Step 2: 解析 OBDA，提取类-属性归属关系和前缀 ─────────────────
     classes: set[str] = set(ttl_classes.keys())

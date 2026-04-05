@@ -73,7 +73,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import datasources, mappings, sparql, ai_query, ontology, workbench, publishing
+from routers import datasources, mappings, sparql, ai_query, ontology, workbench, publishing, annotations
 
 app.include_router(datasources.router, prefix="/api/v1")
 app.include_router(mappings.router, prefix="/api/v1")
@@ -82,6 +82,7 @@ app.include_router(ai_query.router, prefix="/api/v1")
 app.include_router(ontology.router, prefix="/api/v1")
 app.include_router(workbench.router, prefix="/api/v1")
 app.include_router(publishing.router, prefix="/api/v1")
+app.include_router(annotations.router, prefix="/api/v1")
 
 
 @app.middleware("http")

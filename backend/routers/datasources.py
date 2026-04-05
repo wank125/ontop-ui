@@ -20,6 +20,7 @@ from services.bootstrap_service import (
 )
 from services.ontology_format import normalize_ontology_to_turtle
 from services.ontology_enrichment import enrich_ontology_labels
+from services.annotation_merge import merge_annotations_to_ttl
 from config import DATA_DIR
 from repositories.datasource_repo import (
     list_datasources as repo_list,
@@ -186,10 +187,24 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
     }
     manifest_path, selected_tables_path = write_manifest(version_dir, manifest)
 
-    # 异步触发 LLM 语义增强（后台执行，不阻塞响应）
-    # 为生成的 TTL 自动添加 rdfs:label/rdfs:comment，提升 AI 查询质量
+    # active TTL 放在 {DATA_DIR}/{ds_id}/active/merged_ontology.ttl
+    # 与 Bootstrap 版本目录隔离，作为 Ontop endpoint 的实际输入
+    active_dir = Path(DATA_DIR) / ds_id / "active"
+    active_dir.mkdir(parents=True, exist_ok=True)
+    active_ttl_path = str(active_dir / "merged_ontology.ttl")
+
     import asyncio
-    asyncio.create_task(enrich_ontology_labels(onto_path))
+
+    async def _enrich_then_merge():
+        """LLM 标注（→注释库 pending）完成后，立即合并 accepted 注释到 active TTL。"""
+        await enrich_ontology_labels(onto_path, ds_id=ds_id)
+        merge_annotations_to_ttl(
+            raw_ttl_path=onto_path,
+            ds_id=ds_id,
+            output_ttl_path=active_ttl_path,
+        )
+
+    asyncio.create_task(_enrich_then_merge())
 
     return {
         "version": version,
@@ -198,6 +213,7 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
         "resolved_tables": resolved_tables,
         "added_dependencies": added_dependencies,
         "ontology_path": onto_path,
+        "active_ttl_path": active_ttl_path,
         "mapping_path": mapping_path,
         "properties_path": str(props_path),
         "manifest_path": str(manifest_path),
