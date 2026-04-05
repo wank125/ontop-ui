@@ -249,6 +249,73 @@ pnpm dev --port 3001
 | AI 设置 | `/settings` | 模型与提示词配置 |
 | 系统设置 | `/system` | 用户信息、服务状态、运行配置 |
 
+## MCP Server 外部接入
+
+MCP Server 以本体数据通过 Streamable HTTP 博式暴露在 `http://<host>:<port>/mcp/mcp`，支持以下方式接入：
+
+### Claude Desktop
+
+编辑 `claude_desktop_config.json`（macOS） 或 Linux 下位于 `~/.claude/` 目录），添加：
+
+```json
+{
+  "mcpServers": {
+    "ontop-semantic": {
+      "url": "http://localhost:8001/mcp/mcp"
+    }
+  }
+}
+```
+
+### Cursor / Windsurf
+
+打开 Settings → MCP → Add new MCP Server，填入地址：
+
+```
+http://localhost:8001/mcp/mcp
+```
+
+### Python 客户端（脚本测试)
+
+安装依赖：
+```bash
+pip install mcp httpx
+```
+
+运行:
+```bash
+# 确保 MCP 服务已启动
+curl -X POST http://localhost:8001/api/v1/publishing/mcp/start
+
+# 运行外部测试脚本
+python tests/test_mcp_external.py
+```
+
+在容器内测试:
+```bash
+docker exec ontop-lvfa-backend python3 tests/test_mcp_client.py
+```
+
+### 外部测试结果示例
+
+```
+============================================================
+  MCP Server 外部客户端测试
+  端点: http://localhost:8001/mcp/mcp
+============================================================
+  ✅ 初始化 (14ms) — server=ontop-semantic
+  ✅ 列出工具 (6ms) — 4 tools
+  ✅ 列出本体类 (4ms) — 14 classes, first: PropertyProject
+  ✅ 查询类详情 (5ms) — 53 properties
+  ✅ 查询不存在的类 (4ms) — correct error
+  ✅ SPARQL 查询 (12ms)
+  ✅ SPARQL 无效查询 (8ms) — correct isError
+  ✅ 获取样本数据 (12ms)
+
+  结果: 8 总计 | 8 通过 | 0 失败 | 0 跳过
+============================================================
+```
+
 ## 许可证
 
 本项目仅供研究学习使用。Ontop 本身为 Apache 2.0 许可。
