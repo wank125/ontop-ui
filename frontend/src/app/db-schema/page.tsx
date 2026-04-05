@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Activity,
   ArrowRight,
@@ -44,7 +45,7 @@ import {
   Table as TableIcon,
   WandSparkles,
 } from 'lucide-react';
-import { datasources, type BootstrapPreview as ApiBootstrapPreview, type BootstrapResult, type DataSource } from '@/lib/api';
+import { datasources, type BootstrapPreview as ApiBootstrapPreview, type BootstrapResult, type DataSource, workbench, type SemanticCandidates } from '@/lib/api';
 
 interface Column {
   name: string;
@@ -158,6 +159,10 @@ export default function DbSchemaPage() {
   const [generatingPartial, setGeneratingPartial] = useState(false);
   const [partialPreview, setPartialPreview] = useState<ApiBootstrapPreview | null>(null);
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
+  const [semanticCandidates, setSemanticCandidates] = useState<SemanticCandidates | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generateResult, setGenerateResult] = useState<BootstrapResult | null>(null);
 
   const loadSchema = async (dataSourceId: string) => {
     if (!dataSourceId) return;
@@ -367,6 +372,40 @@ export default function DbSchemaPage() {
       toast.error(error.message || '局部 Bootstrap 失败');
     } finally {
       setGeneratingPartial(false);
+    }
+  };
+
+  const handleSemanticAnalyze = async () => {
+    if (!selectedId || selectedTables.length === 0) {
+      toast.error('请先勾选至少一张表');
+      return;
+    }
+    setAnalyzing(true);
+    try {
+      const result = await workbench.analyze(selectedId, selectedTables);
+      setSemanticCandidates(result);
+      toast.success('语义分析完成');
+    } catch (error: any) {
+      toast.error(error.message || '语义分析失败');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleSemanticGenerate = async () => {
+    if (!selectedId || selectedTables.length === 0) {
+      toast.error('请先勾选至少一张表');
+      return;
+    }
+    setGenerating(true);
+    try {
+      const result = await workbench.generate(selectedId, selectedTables);
+      setGenerateResult(result);
+      toast.success('本体和映射文件已生成');
+    } catch (error: any) {
+      toast.error(error.message || '生成失败');
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -612,7 +651,13 @@ export default function DbSchemaPage() {
               <p className="text-sm text-muted-foreground">请选择一张表查看详情。</p>
             </div>
           ) : (
-            <>
+            <Tabs defaultValue="structure" className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="structure">表结构</TabsTrigger>
+                <TabsTrigger value="semantic">语义建模</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="structure" className="space-y-6">
               <Card className="border-border/80 bg-card/70">
                 <CardHeader className="gap-2">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -930,7 +975,220 @@ export default function DbSchemaPage() {
                   </Card>
                 </div>
               </div>
-            </>
+              </TabsContent>
+
+              <TabsContent value="semantic" className="space-y-6">
+                {selectedTables.length === 0 ? (
+                  <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/40">
+                    <div className="text-center">
+                      <Sparkles className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
+                      <p className="text-sm text-muted-foreground">请先在左侧勾选需要建模的表。</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold text-foreground">语义建模</h2>
+                        <p className="text-sm text-muted-foreground">已选 {selectedTables.length} 张表，分析后可确认候选并生成本体。</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <Button variant="outline" onClick={handleSemanticAnalyze} disabled={analyzing || selectedTables.length === 0}>
+                          {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                          语义分析
+                        </Button>
+                        <Button onClick={handleSemanticGenerate} disabled={generating || selectedTables.length === 0 || !semanticCandidates}>
+                          {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <WandSparkles className="mr-2 h-4 w-4" />}
+                          生成本体
+                        </Button>
+                      </div>
+                    </div>
+
+                    {!semanticCandidates ? (
+                      <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/40">
+                        <div className="text-center">
+                          <Database className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
+                          <p className="text-sm text-muted-foreground">点击"语义分析"查看推断结果。</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Card className="border-border/80 bg-card/70">
+                          <CardHeader className="gap-2">
+                            <CardTitle className="text-base">类候选</CardTitle>
+                            <CardDescription>每张选中的表对应一个 OWL Class，类名由表名自动推断。</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>表名</TableHead>
+                                  <TableHead>类名</TableHead>
+                                  <TableHead>类 IRI</TableHead>
+                                  <TableHead>状态</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {semanticCandidates.candidates.classes.map((cls) => (
+                                  <TableRow key={cls.table_name}>
+                                    <TableCell className="font-mono text-xs">{cls.table_name}</TableCell>
+                                    <TableCell className="font-medium">{cls.class_name}</TableCell>
+                                    <TableCell className="font-mono text-xs text-muted-foreground">{cls.class_iri}</TableCell>
+                                    <TableCell>
+                                      <Badge variant={cls.status === 'accepted' ? 'default' : 'secondary'}>{cls.status}</Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="border-border/80 bg-card/70">
+                          <CardHeader className="gap-2">
+                            <CardTitle className="text-base">数据属性候选</CardTitle>
+                            <CardDescription>列到 OWL DataProperty 的映射，包含类型推断和语义标记。</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="max-h-[400px] overflow-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>表</TableHead>
+                                    <TableHead>列名</TableHead>
+                                    <TableHead>属性名</TableHead>
+                                    <TableHead>XSD 类型</TableHead>
+                                    <TableHead>标记</TableHead>
+                                    <TableHead>状态</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {semanticCandidates.candidates.data_properties.map((prop, idx) => (
+                                    <TableRow key={`${prop.table_name}-${prop.column_name}-${idx}`}>
+                                      <TableCell className="font-mono text-xs">{prop.table_name}</TableCell>
+                                      <TableCell className="font-mono text-xs">{prop.column_name}</TableCell>
+                                      <TableCell className="font-medium">{prop.property_name}</TableCell>
+                                      <TableCell className="text-xs text-muted-foreground">{prop.datatype}</TableCell>
+                                      <TableCell>
+                                        <div className="flex flex-wrap gap-1">
+                                          {prop.is_pk && (
+                                            <Badge variant="outline" className="border-amber-500/30 text-amber-500 text-[10px]">
+                                              <KeyRound className="mr-1 h-2.5 w-2.5" />PK
+                                            </Badge>
+                                          )}
+                                          {prop.is_fk && (
+                                            <Badge variant="outline" className="text-[10px]">
+                                              <Link2 className="mr-1 h-2.5 w-2.5" />FK
+                                            </Badge>
+                                          )}
+                                          {prop.is_label && (
+                                            <Badge variant="outline" className="border-blue-500/30 text-blue-500 text-[10px]">label</Badge>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant={
+                                            prop.status === 'accepted' ? 'default'
+                                            : prop.status === 'system' ? 'secondary'
+                                            : 'outline'
+                                          }
+                                        >
+                                          {prop.status}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="border-border/80 bg-card/70">
+                          <CardHeader className="gap-2">
+                            <CardTitle className="text-base">对象属性候选</CardTitle>
+                            <CardDescription>外键关系映射为 OWL ObjectProperty。</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>源表</TableHead>
+                                  <TableHead>属性名</TableHead>
+                                  <TableHead>目标表</TableHead>
+                                  <TableHead>FK 列</TableHead>
+                                  <TableHead>状态</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {semanticCandidates.candidates.object_properties.length > 0 ? (
+                                  semanticCandidates.candidates.object_properties.map((prop, idx) => (
+                                    <TableRow key={`${prop.from_table}-${prop.property_name}-${idx}`}>
+                                      <TableCell className="font-mono text-xs">{prop.from_table}</TableCell>
+                                      <TableCell className="font-medium">{prop.property_name}</TableCell>
+                                      <TableCell className="font-mono text-xs">{prop.to_table}</TableCell>
+                                      <TableCell className="font-mono text-xs text-muted-foreground">
+                                        {prop.fk_columns.join(', ')}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant={
+                                            prop.status === 'accepted' ? 'default'
+                                            : prop.status === 'external' ? 'outline'
+                                            : 'secondary'
+                                          }
+                                        >
+                                          {prop.status}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                ) : (
+                                  <TableRow>
+                                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                      未检测到对象属性
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+
+                        {generateResult && (
+                          <Card className="border-border/80 bg-card/70">
+                            <CardHeader className="gap-2">
+                              <CardTitle className="text-base">生成结果</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                              <div className="flex items-center gap-2 text-emerald-500">
+                                <CheckCircle2 className="h-4 w-4" />
+                                <span className="text-sm font-medium">{generateResult.version}</span>
+                              </div>
+                              <div className="space-y-2 text-xs text-muted-foreground">
+                                <div>
+                                  <span className="font-medium text-foreground">Ontology:</span>{' '}
+                                  <code>{generateResult.ontology_path}</code>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-foreground">Mapping:</span>{' '}
+                                  <code>{generateResult.mapping_path}</code>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-foreground">Manifest:</span>{' '}
+                                  <code>{generateResult.manifest_path}</code>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       </div>

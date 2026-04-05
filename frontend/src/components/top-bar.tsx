@@ -117,7 +117,7 @@ export function TopBar() {
                 )}
               </div>
               <span className={cn('hidden text-xs sm:inline', statusColor)}>
-                :{endpointStatus.port}
+                Ontop :{endpointStatus.port} · {statusLabel}
               </span>
             </Button>
           </DropdownMenuTrigger>

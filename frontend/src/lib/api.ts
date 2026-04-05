@@ -280,6 +280,68 @@ export interface ModelDiscoveryResponse {
   error?: string;
 }
 
+// ── Workbench Types ────────────────────────────────────
+
+export interface ClassCandidate {
+  table_name: string;
+  class_name: string;
+  class_iri: string;
+  label: string;
+  status: 'accepted' | 'renamed' | 'ignored';
+}
+
+export interface DataPropertyCandidate {
+  table_name: string;
+  column_name: string;
+  property_name: string;
+  property_iri: string;
+  datatype: string;
+  is_nullable: boolean;
+  is_pk: boolean;
+  is_fk: boolean;
+  status: 'accepted' | 'renamed' | 'ignored' | 'system';
+  is_label?: boolean;
+}
+
+export interface ObjectPropertyCandidate {
+  from_table: string;
+  to_table: string;
+  property_name: string;
+  property_iri: string;
+  fk_columns: string[];
+  target_columns?: string[];
+  status: 'accepted' | 'renamed' | 'ignored' | 'external';
+}
+
+export interface SemanticCandidates {
+  candidates: {
+    classes: ClassCandidate[];
+    data_properties: DataPropertyCandidate[];
+    object_properties: ObjectPropertyCandidate[];
+  };
+}
+
+export const workbench = {
+  analyze: (datasourceId: string, tables: string[], baseIri?: string) =>
+    api<SemanticCandidates>('/workbench/analyze', {
+      method: 'POST',
+      body: JSON.stringify({
+        datasource_id: datasourceId,
+        tables,
+        base_iri: baseIri || 'http://example.com/ontop/',
+      }),
+    }),
+  generate: (datasourceId: string, tables: string[], baseIri?: string) =>
+    api<BootstrapResult>('/workbench/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        datasource_id: datasourceId,
+        tables,
+        base_iri: baseIri || 'http://example.com/ontop/',
+      }),
+    }),
+};
+
 export const ai = {
   ontologySummary: () =>
     api<{ classes: string[]; data_properties: string[]; object_properties: string[]; prefixes: Record<string, string> }>(
