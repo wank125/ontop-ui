@@ -103,8 +103,10 @@ export const datasources = {
     api<void>(`/datasources/${id}`, { method: 'DELETE' }),
   test: (id: string) =>
     api<{ connected: boolean; message: string }>(`/datasources/${id}/test`, { method: 'POST' }),
-  schema: (id: string) =>
-    api<any>(`/datasources/${id}/schema`),
+  schemas: (id: string) =>
+    api<{ schemas: string[] }>(`/datasources/${id}/schemas`),
+  schema: (id: string, schemaFilter?: string) =>
+    api<any>(`/datasources/${id}/schema${schemaFilter ? `?schema_filter=${encodeURIComponent(schemaFilter)}` : ''}`),
   bootstrapPreview: (id: string, data: BootstrapRequest) =>
     api<BootstrapPreview>(`/datasources/${id}/bootstrap-preview`, {
       method: 'POST',

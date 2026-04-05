@@ -4,6 +4,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 
@@ -77,21 +78,32 @@ async def test_connection(ds_id: str):
         Path(props_path).unlink(missing_ok=True)
 
 
-@router.get("/{ds_id}/schema")
-async def get_schema(ds_id: str):
+@router.get("/{ds_id}/schemas")
+async def list_schemas(ds_id: str):
+    """Return distinct schema names from the database metadata."""
     ds = _get_ds(ds_id)
-    props_path = _write_temp_properties(ds)
-    try:
-        success, output = await extract_db_metadata(props_path)
-        if not success:
-            raise HTTPException(400, f"Failed to extract metadata: {output[:500]}")
-        import json as json_mod
-        try:
-            return json_mod.loads(output)
-        except json_mod.JSONDecodeError:
-            return {"raw": output}
-    finally:
-        Path(props_path).unlink(missing_ok=True)
+    schema_data = await _get_schema_metadata(ds)
+    schema_names: list[str] = []
+    seen: set[str] = set()
+    for relation in schema_data.get("relations", []):
+        schema_name = _relation_schema_name(relation)
+        if schema_name not in seen:
+            seen.add(schema_name)
+            schema_names.append(schema_name)
+    return {"schemas": schema_names}
+
+
+@router.get("/{ds_id}/schema")
+async def get_schema(ds_id: str, schema_filter: Optional[str] = None):
+    ds = _get_ds(ds_id)
+    schema_data = await _get_schema_metadata(ds)
+    if schema_filter:
+        filtered = [
+            r for r in schema_data.get("relations", [])
+            if _relation_belongs_to_schema(r, schema_filter)
+        ]
+        schema_data["relations"] = filtered
+    return schema_data
 
 
 @router.post("/{ds_id}/bootstrap")
@@ -101,6 +113,7 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
     root_output_dir = Path(req.output_dir) if req.output_dir else Path(DATA_DIR) / ds["id"]
     root_output_dir.mkdir(parents=True, exist_ok=True)
 
+    schema = None
     effective_mode = "partial" if req.mode == "partial" or req.tables else "full"
     requested_tables = [table for table in req.tables if table.strip()]
     resolved_tables: list[str] = []
@@ -115,12 +128,23 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
             requested_tables,
             req.include_dependencies,
         )
+    elif _is_mysql_datasource(ds):
+        # MySQL metadata often includes system schemas such as `sys`. Build the "full"
+        # bootstrap from filtered business tables instead of handing every visible relation
+        # to Ontop directly.
+        schema = await _get_schema_metadata(ds)
+        requested_tables = [
+            ".".join(_normalize_identifier(part) for part in relation.get("name", [])).split(".")[-1]
+            for relation in schema.get("relations", [])
+        ]
+        resolved_tables = list(requested_tables)
+        effective_mode = "full"
 
     version, version_dir = get_version_dir(root_output_dir, effective_mode)
     props_path = version_dir / f"{base_name}.properties"
     _write_properties(ds, str(props_path))
 
-    if effective_mode == "partial":
+    if req.mode == "partial" or (_is_mysql_datasource(ds) and schema is not None and resolved_tables):
         onto_path, mapping_path, output = await generate_partial_bootstrap(
             base_iri=req.base_iri,
             version_dir=version_dir,
@@ -177,7 +201,7 @@ async def preview_bootstrap(ds_id: str, req: BootstrapRequest):
     if req.mode != "partial" and not req.tables:
         schema = await _get_schema_metadata(ds)
         all_tables = [
-            ".".join(part.replace('"', '') for part in relation.get("name", [])).split(".")[-1]
+            ".".join(_normalize_identifier(part) for part in relation.get("name", [])).split(".")[-1]
             for relation in schema.get("relations", [])
         ]
         return build_preview(schema, all_tables, all_tables, [])
@@ -192,6 +216,11 @@ async def preview_bootstrap(ds_id: str, req: BootstrapRequest):
         req.include_dependencies,
     )
     return build_preview(schema, requested_tables, resolved_tables, added_dependencies)
+
+
+def _relation_belongs_to_schema(relation: dict, schema_name: str) -> bool:
+    """Check if a relation belongs to the given schema."""
+    return _relation_schema_name(relation) == schema_name
 
 
 def _get_ds(ds_id: str) -> dict:
@@ -222,6 +251,56 @@ async def _get_schema_metadata(ds: dict) -> dict:
         success, output = await extract_db_metadata(props_path)
         if not success:
             raise HTTPException(400, f"Failed to extract metadata: {output[:500]}")
-        return load_schema_metadata(output)
+        schema_data = load_schema_metadata(output)
+        return _filter_schema_metadata(ds, schema_data)
     finally:
         Path(props_path).unlink(missing_ok=True)
+
+
+def _normalize_identifier(value: str) -> str:
+    return value.strip().strip('"').strip("'").strip("`")
+
+
+def _relation_schema_name(relation: dict) -> str:
+    name_parts = relation.get("name", [])
+    if len(name_parts) >= 2:
+        return _normalize_identifier(name_parts[-2])
+    return "(default)"
+
+
+def _is_mysql_datasource(ds: dict) -> bool:
+    driver = ds.get("driver", "").lower()
+    jdbc_url = ds.get("jdbc_url", "").lower()
+    return "mysql" in driver or jdbc_url.startswith("jdbc:mysql:")
+
+
+def _default_mysql_schema(ds: dict) -> str | None:
+    jdbc_url = ds.get("jdbc_url", "")
+    if not jdbc_url.startswith("jdbc:mysql:"):
+        return None
+    without_prefix = jdbc_url[len("jdbc:mysql:"):]
+    base = without_prefix.split("?", 1)[0]
+    parsed = urlparse(base if base.startswith("//") else f"//{base}")
+    path = parsed.path.lstrip("/")
+    return path or None
+
+
+def _filter_schema_metadata(ds: dict, schema_data: dict) -> dict:
+    relations = schema_data.get("relations", [])
+    if not _is_mysql_datasource(ds):
+        return schema_data
+
+    default_schema = _default_mysql_schema(ds)
+    system_schemas = {"sys", "mysql", "information_schema", "performance_schema"}
+
+    filtered_relations = []
+    for relation in relations:
+        schema_name = _relation_schema_name(relation)
+        if schema_name in system_schemas:
+            continue
+        if default_schema and schema_name not in {"(default)", default_schema}:
+            continue
+        filtered_relations.append(relation)
+
+    schema_data["relations"] = filtered_relations
+    return schema_data

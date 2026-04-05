@@ -28,8 +28,12 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
+  ChevronDown,
+  ChevronRight,
   Database,
   Eye,
+  KeyRound,
+  Link2,
   Loader2,
   Plus,
   RefreshCw,
@@ -40,6 +44,9 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { datasources, type DataSource } from '@/lib/api';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 
 const driverOptions = [
   { value: 'postgresql', label: 'PostgreSQL', className: 'org.postgresql.Driver' },
@@ -49,6 +56,53 @@ const driverOptions = [
 ];
 
 type DataSourceStatus = 'connected' | 'error' | 'unknown';
+
+interface Column {
+  name: string;
+  datatype: string;
+  isNullable: boolean;
+}
+
+interface ForeignKey {
+  name?: string;
+  from: { columns: string[] };
+  to: { relation: string[]; columns: string[] };
+}
+
+interface UniqueConstraint {
+  isPrimaryKey: boolean;
+  determinants: string[];
+}
+
+interface Relation {
+  name: string[];
+  columns: Column[];
+  foreignKeys: ForeignKey[];
+  uniqueConstraints: UniqueConstraint[];
+}
+
+interface DbSchema {
+  relations: Relation[];
+  metadata: {
+    dbmsProductName: string;
+    dbmsVersion: string;
+    extractionTime?: string;
+  };
+}
+
+interface SchemaGroup {
+  schemaName: string;
+  tables: CleanedRelation[];
+}
+
+interface CleanedRelation {
+  tableName: string;
+  schemaName: string;
+  columns: Column[];
+  foreignKeys: ForeignKey[];
+  uniqueConstraints: UniqueConstraint[];
+  primaryKeyColumns: string[];
+}
 
 interface DataSourceUI {
   id: string;
@@ -65,6 +119,45 @@ interface DataSourceUI {
     mappingPath: string;
     propertiesPath: string;
   };
+}
+
+function stripQuotes(value: string) {
+  return value.replace(/"/g, '');
+}
+
+function cleanRelation(relation: Relation): CleanedRelation {
+  const nameParts = relation.name.map(stripQuotes);
+  const schemaName = nameParts.length >= 2 ? nameParts[nameParts.length - 2] : '(default)';
+  const tableName = nameParts[nameParts.length - 1];
+  const columns = (relation.columns ?? []).map((col) => ({
+    ...col,
+    name: stripQuotes(col.name ?? ''),
+  }));
+  const foreignKeys = (relation.foreignKeys ?? []).map((fk) => ({
+    ...fk,
+    from: { columns: (fk.from?.columns ?? []).map(stripQuotes) },
+    to: {
+      relation: (fk.to?.relation ?? []).map(stripQuotes),
+      columns: (fk.to?.columns ?? []).map(stripQuotes),
+    },
+  }));
+  const uniqueConstraints = relation.uniqueConstraints ?? [];
+  const primaryKeyColumns =
+    uniqueConstraints.find((uc) => uc.isPrimaryKey)?.determinants.map(stripQuotes) ?? [];
+  return { tableName, schemaName, columns, foreignKeys, uniqueConstraints, primaryKeyColumns };
+}
+
+function groupBySchema(relations: Relation[]): SchemaGroup[] {
+  const cleaned = relations.map(cleanRelation);
+  const map = new Map<string, CleanedRelation[]>();
+  for (const rel of cleaned) {
+    const list = map.get(rel.schemaName) ?? [];
+    list.push(rel);
+    map.set(rel.schemaName, list);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([schemaName, tables]) => ({ schemaName, tables }));
 }
 
 function toUI(ds: DataSource): DataSourceUI {
@@ -118,6 +211,14 @@ export default function DataSourcePage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [bootstrapingId, setBootstrapingId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [schemaData, setSchemaData] = useState<DbSchema | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [selectedTableName, setSelectedTableName] = useState<string | null>(null);
+  const [checkedTables, setCheckedTables] = useState<string[]>([]);
+  const [includeDependencies, setIncludeDependencies] = useState(true);
+  const [schemaTreeSearch, setSchemaTreeSearch] = useState('');
+  const [openSchemas, setOpenSchemas] = useState<Set<string>>(new Set());
+  const [bootstrapMode, setBootstrapMode] = useState<'full' | 'partial'>('full');
 
   const loadSources = async () => {
     setLoading(true);
@@ -243,29 +344,41 @@ export default function DataSourcePage() {
   };
 
   const handleLoadSchema = async (id: string) => {
+    setSchemaLoading(true);
     try {
-      await datasources.schema(id);
+      const data = await datasources.schema(id);
+      setSchemaData(data as DbSchema);
+      const groups = groupBySchema((data as DbSchema).relations ?? []);
+      setOpenSchemas(new Set(groups.map((g) => g.schemaName)));
       setDataSources((previous) =>
         previous.map((item) =>
           item.id === id
             ? {
                 ...item,
                 schemaLoaded: true,
-                lastMessage: '结构已成功探测，可进入数据库概览查看详情。',
+                lastMessage: '结构已成功探测，可在下方查看 Schema 树。',
               }
             : item
         )
       );
-      toast.success('结构探测完成');
+      toast.success(`结构探测完成，共 ${((data as DbSchema).relations ?? []).length} 张表`);
     } catch (error: any) {
       toast.error(error.message || '结构探测失败');
+    } finally {
+      setSchemaLoading(false);
     }
   };
 
   const handleBootstrap = async (id: string) => {
     setBootstrapingId(id);
+    const isPartial = bootstrapMode === 'partial' && checkedTables.length > 0;
     try {
-      const result = await datasources.bootstrap(id, { base_iri: 'http://example.com/ontop/' });
+      const result = await datasources.bootstrap(id, {
+        base_iri: 'http://example.com/ontop/',
+        mode: isPartial ? 'partial' : 'full',
+        tables: isPartial ? checkedTables : [],
+        include_dependencies: isPartial ? includeDependencies : true,
+      });
       setDataSources((previous) =>
         previous.map((item) =>
           item.id === id
@@ -277,12 +390,12 @@ export default function DataSourcePage() {
                   mappingPath: result.mapping_path,
                   propertiesPath: result.properties_path,
                 },
-                lastMessage: 'Bootstrap 已完成，本体和映射文件已生成。',
+                lastMessage: `Bootstrap 已完成 (${isPartial ? 'partial' : 'full'})，本体和映射文件已生成。`,
               }
             : item
         )
       );
-      toast.success('Bootstrap 成功');
+      toast.success(`Bootstrap 成功 (${isPartial ? `选中 ${checkedTables.length} 张表` : '全量'})`);
     } catch (error: any) {
       toast.error(error.message || 'Bootstrap 失败');
     } finally {
@@ -294,6 +407,67 @@ export default function DataSourcePage() {
   const errorCount = dataSources.filter((item) => item.status === 'error').length;
   const schemaCount = dataSources.filter((item) => item.schemaLoaded).length;
   const bootstrapCount = dataSources.filter((item) => item.bootstrapReady).length;
+
+  // Schema tree data
+  const schemaGroups = useMemo(() => {
+    if (!schemaData) return [];
+    const groups = groupBySchema(schemaData.relations ?? []);
+    if (!schemaTreeSearch.trim()) return groups;
+    const query = schemaTreeSearch.toLowerCase();
+    return groups
+      .map((group) => ({
+        ...group,
+        tables: group.tables.filter(
+          (table) =>
+            table.tableName.toLowerCase().includes(query) ||
+            table.columns.some((col) => col.name.toLowerCase().includes(query))
+        ),
+      }))
+      .filter((group) => group.tables.length > 0);
+  }, [schemaData, schemaTreeSearch]);
+
+  const selectedRelation = useMemo(() => {
+    if (!selectedTableName || !schemaData) return null;
+    const groups = groupBySchema(schemaData.relations ?? []);
+    for (const group of groups) {
+      const found = group.tables.find((t) => t.tableName === selectedTableName);
+      if (found) return found;
+    }
+    return null;
+  }, [schemaData, selectedTableName]);
+
+  const toggleTableCheck = (tableName: string, checked: boolean) => {
+    setCheckedTables((prev) =>
+      checked ? [...new Set([...prev, tableName])] : prev.filter((n) => n !== tableName)
+    );
+    // Auto switch to partial mode when tables are selected
+    if (checked) setBootstrapMode('partial');
+  };
+
+  const toggleSchemaCheck = (schemaName: string, checked: boolean, tableNames: string[]) => {
+    setCheckedTables((prev) => {
+      const others = prev.filter((n) => !tableNames.includes(n));
+      return checked ? [...others, ...tableNames] : others;
+    });
+    if (checked) setBootstrapMode('partial');
+  };
+
+  const toggleAllCheck = (checked: boolean) => {
+    if (!schemaData) return;
+    const allTables = groupBySchema(schemaData.relations ?? []).flatMap((g) => g.tables.map((t) => t.tableName));
+    setCheckedTables(checked ? allTables : []);
+    if (checked) setBootstrapMode('partial');
+    else setBootstrapMode('full');
+  };
+
+  const toggleSchemaOpen = (schemaName: string) => {
+    setOpenSchemas((prev) => {
+      const next = new Set(prev);
+      if (next.has(schemaName)) next.delete(schemaName);
+      else next.add(schemaName);
+      return next;
+    });
+  };
 
   return (
     <>
@@ -604,59 +778,36 @@ export default function DataSourcePage() {
                   <Card className="border-border/80 bg-card/70">
                     <CardHeader className="gap-2">
                       <CardTitle className="text-base">主操作</CardTitle>
-                      <CardDescription>把常用操作抬到页面一层，不再藏在更多菜单里。</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent>
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        <Button
-                          variant="outline"
-                          className="justify-start"
-                          onClick={() => handleTest(activeSource.id)}
-                          disabled={testingId === activeSource.id}
-                        >
-                          {testingId === activeSource.id ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Server className="mr-2 h-4 w-4" />
-                          )}
+                        <Button variant="outline" className="justify-start" onClick={() => handleTest(activeSource.id)} disabled={testingId === activeSource.id}>
+                          {testingId === activeSource.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Server className="mr-2 h-4 w-4" />}
                           测试连接
                         </Button>
-
-                        <Button
-                          variant="outline"
-                          className="justify-start"
-                          onClick={() => handleLoadSchema(activeSource.id)}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
+                        <Button variant="outline" className="justify-start" onClick={() => handleLoadSchema(activeSource.id)} disabled={schemaLoading}>
+                          {schemaLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
                           探测结构
                         </Button>
-
                         <Button
                           className="justify-start bg-gradient-to-r from-[oklch(0.70_0.15_280)] to-[oklch(0.65_0.18_200)] hover:opacity-90"
                           onClick={() => handleBootstrap(activeSource.id)}
                           disabled={bootstrapingId === activeSource.id}
                         >
-                          {bootstrapingId === activeSource.id ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <WandSparkles className="mr-2 h-4 w-4" />
-                          )}
-                          Bootstrap
+                          {bootstrapingId === activeSource.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <WandSparkles className="mr-2 h-4 w-4" />}
+                          {bootstrapMode === 'partial' && checkedTables.length > 0 ? `Bootstrap (${checkedTables.length} 表)` : 'Bootstrap'}
                         </Button>
-
                         <Button variant="outline" className="justify-start text-destructive" onClick={() => handleDelete(activeSource.id)}>
                           <Trash2 className="mr-2 h-4 w-4" />
                           删除
                         </Button>
                       </div>
-
                     </CardContent>
                   </Card>
 
                   <Card className="border-border/80 bg-card/70">
                     <CardHeader className="gap-2">
                       <CardTitle className="text-base">Bootstrap 产物</CardTitle>
-                      <CardDescription>生成成功后展示输出路径。</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
                       {activeSource.bootstrapPaths ? (
@@ -682,6 +833,198 @@ export default function DataSourcePage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Schema Loading */}
+                {schemaLoading && (
+                  <div className="flex items-center justify-center rounded-xl border border-border/70 bg-card/60 py-12">
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">正在探测结构...</span>
+                  </div>
+                )}
+
+                {/* Schema Tree + Table Detail */}
+                {schemaData && !schemaLoading && (
+                  <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+                    {/* Schema Tree */}
+                    <Card className="border-border/80 bg-card/70">
+                      <CardHeader className="gap-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <CardTitle className="text-base">Schema 树</CardTitle>
+                            <CardDescription>
+                              共 {schemaGroups.reduce((sum, g) => sum + g.tables.length, 0)} 张表，已选 {checkedTables.length} 张
+                            </CardDescription>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleAllCheck(true)}>全选</Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleAllCheck(false)}>清空</Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input placeholder="搜索表名或字段..." value={schemaTreeSearch} onChange={(e) => setSchemaTreeSearch(e.target.value)} className="pl-9" />
+                        </div>
+
+                        {schemaGroups.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                            没有匹配的表
+                          </div>
+                        ) : (
+                          <div className="max-h-[520px] space-y-2 overflow-y-auto">
+                            {schemaGroups.map((group) => {
+                              const isOpen = openSchemas.has(group.schemaName);
+                              const schemaTableNames = group.tables.map((t) => t.tableName);
+                              const allChecked = schemaTableNames.length > 0 && schemaTableNames.every((n) => checkedTables.includes(n));
+                              const someChecked = schemaTableNames.some((n) => checkedTables.includes(n));
+                              return (
+                                <Collapsible key={group.schemaName} open={isOpen} onOpenChange={() => toggleSchemaOpen(group.schemaName)}>
+                                  <div className="rounded-lg border border-border/70 bg-background/30">
+                                    <div className="flex items-center gap-2 px-3 py-2">
+                                      <CollapsibleTrigger asChild>
+                                        <button type="button" className="flex items-center gap-1">
+                                          {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                        </button>
+                                      </CollapsibleTrigger>
+                                      <Checkbox
+                                        checked={allChecked ? true : someChecked ? 'indeterminate' : false}
+                                        onCheckedChange={(checked) => toggleSchemaCheck(group.schemaName, checked === true, schemaTableNames)}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      <span className="flex-1 text-sm font-medium text-foreground">{group.schemaName}</span>
+                                      <Badge variant="secondary">{group.tables.length} 表</Badge>
+                                    </div>
+                                    <CollapsibleContent>
+                                      <div className="border-t border-border/50 px-3 py-2">
+                                        {group.tables.map((table) => {
+                                          const isChecked = checkedTables.includes(table.tableName);
+                                          const isSelected = selectedTableName === table.tableName;
+                                          return (
+                                            <div
+                                              key={table.tableName}
+                                              className={[
+                                                'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors cursor-pointer',
+                                                isSelected
+                                                  ? 'bg-primary/10 text-foreground'
+                                                  : 'hover:bg-muted/40 text-muted-foreground hover:text-foreground',
+                                              ].join(' ')}
+                                              onClick={() => setSelectedTableName(table.tableName)}
+                                            >
+                                              <Checkbox
+                                                checked={isChecked}
+                                                onCheckedChange={(checked) => toggleTableCheck(table.tableName, checked === true)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="shrink-0"
+                                              />
+                                              <span className="flex-1 truncate font-mono text-xs">{table.tableName}</span>
+                                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                                {table.columns.length}列{table.foreignKeys.length > 0 ? ` · ${table.foreignKeys.length}FK` : ''}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </CollapsibleContent>
+                                  </div>
+                                </Collapsible>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {checkedTables.length > 0 && (
+                          <div className="space-y-3 rounded-lg border border-border/70 bg-background/30 p-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <p className="text-xs text-muted-foreground">自动补依赖（根据外键补齐目标表）</p>
+                              <Switch checked={includeDependencies} onCheckedChange={setIncludeDependencies} />
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {checkedTables.map((name) => (
+                                <Badge key={name} variant="secondary" className="text-xs">{name}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Table Detail */}
+                    <Card className="border-border/80 bg-card/70">
+                      <CardHeader className="gap-2">
+                        <CardTitle className="text-base">{selectedRelation ? selectedRelation.tableName : '表详情'}</CardTitle>
+                        <CardDescription>
+                          {selectedRelation
+                            ? `${selectedRelation.schemaName} · ${selectedRelation.columns.length} 列 · ${selectedRelation.foreignKeys.length} 外键`
+                            : '点击左侧表名查看详情'}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {!selectedRelation ? (
+                          <div className="flex min-h-[280px] items-center justify-center text-sm text-muted-foreground">
+                            从 Schema 树中选择一张表查看详情
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="flex flex-wrap gap-2">
+                              {selectedRelation.primaryKeyColumns.length > 0 ? (
+                                <Badge variant="outline" className="border-amber-500/30 text-amber-500">
+                                  <KeyRound className="mr-1 h-3 w-3" />
+                                  PK: {selectedRelation.primaryKeyColumns.join(', ')}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="border-destructive/30 text-destructive">无主键</Badge>
+                              )}
+                              {selectedRelation.foreignKeys.map((fk, idx) => (
+                                <Badge key={idx} variant="outline">
+                                  <Link2 className="mr-1 h-3 w-3" />
+                                  {fk.from.columns.join(', ')} → {fk.to.relation.join('.')}
+                                </Badge>
+                              ))}
+                            </div>
+
+                            <div className="max-h-[400px] overflow-auto rounded-lg border border-border/70">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-border/70 bg-muted/30">
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">字段</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">类型</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">可空</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">约束</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedRelation.columns.map((col) => {
+                                    const isPK = selectedRelation.primaryKeyColumns.includes(col.name);
+                                    const fk = selectedRelation.foreignKeys.find((f) => f.from.columns.includes(col.name));
+                                    return (
+                                      <tr key={col.name} className="border-b border-border/40 last:border-0">
+                                        <td className="px-3 py-1.5 font-mono text-xs">{col.name}</td>
+                                        <td className="px-3 py-1.5 text-xs text-muted-foreground">{col.datatype}</td>
+                                        <td className="px-3 py-1.5 text-xs">{col.isNullable ? 'YES' : 'NO'}</td>
+                                        <td className="px-3 py-1.5">
+                                          <div className="flex gap-1">
+                                            {isPK && (
+                                              <Badge variant="outline" className="border-amber-500/30 text-amber-500 px-1 py-0 text-[10px]">PK</Badge>
+                                            )}
+                                            {fk && (
+                                              <Badge variant="outline" className="px-1 py-0 text-[10px]">FK→{fk.to.relation.join('.')}</Badge>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
               </>
             )}
           </div>

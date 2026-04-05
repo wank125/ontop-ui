@@ -14,7 +14,7 @@ from services.ontop_cli import bootstrap as ontop_bootstrap
 
 
 def normalize_table_name(name: str) -> str:
-    return name.replace('"', '').strip()
+    return name.replace('"', '').replace("`", "").strip()
 
 
 def get_version_dir(base_dir: Path, mode: str) -> tuple[str, Path]:
