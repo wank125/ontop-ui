@@ -348,6 +348,8 @@ async def ontology_summary():
     data_properties = set()
     object_properties = set()
     all_uris: set[str] = set()
+    # class_name -> sorted list of property URIs belonging to that class
+    class_properties: dict[str, list[str]] = {}
 
     for m in parsed.mappings:
         target = m.target
@@ -355,6 +357,9 @@ async def ontology_summary():
         for c in class_matches:
             classes.add(c.split("/")[-1])
             all_uris.add(c)
+
+        # Determine the class this mapping belongs to
+        current_class = class_matches[0].split("/")[-1] if class_matches else None
 
         # Extract property URIs: match <uri> {column}
         prop_matches = re_mod.findall(r'<([^>]+)>\s*\{[^}]+\}', target)
@@ -367,6 +372,9 @@ async def ontology_summary():
                 object_properties.add(local_name)
             else:
                 data_properties.add(local_name)
+            # Track per-class properties
+            if current_class:
+                class_properties.setdefault(current_class, set()).add(p)
 
         relation_matches = re_mod.findall(r'<([^>]+)>\s+<([^>]+)>\s+<([^>]+)>', target)
         for _, predicate_uri, object_uri in relation_matches:
@@ -377,6 +385,8 @@ async def ontology_summary():
             all_uris.add(predicate_uri)
             local_name = predicate_uri.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
             object_properties.add(local_name)
+            if current_class:
+                class_properties.setdefault(current_class, set()).add(predicate_uri)
 
     # Auto-detect ontology namespace
     namespaces: dict[str, str] = dict(parsed.prefixes)
@@ -394,11 +404,25 @@ async def ontology_summary():
                 namespaces["cls"] = base
                 break
 
+    # Build per-class property summary with short names
+    cls_base = namespaces.get("cls", "")
+    class_property_summary: dict[str, list[str]] = {}
+    for cls_name, prop_uris in sorted(class_properties.items()):
+        short_props = []
+        for puri in sorted(prop_uris):
+            # Get the part after cls base
+            if puri.startswith(cls_base):
+                short_props.append(puri[len(cls_base):])
+            else:
+                short_props.append(puri.rsplit("/", 1)[-1])
+        class_property_summary[cls_name] = short_props
+
     return {
         "classes": sorted(classes),
         "data_properties": sorted(data_properties),
         "object_properties": sorted(object_properties),
         "prefixes": namespaces,
+        "class_properties": class_property_summary,
     }
 
 
@@ -424,6 +448,7 @@ async def ai_query(question: str):
             relationships=summary["object_properties"],
             prefixes=summary["prefixes"],
             template=custom_prompt,
+            class_properties=summary.get("class_properties"),
         )
 
         sparql = await generate_sparql(prompt, question)
@@ -438,6 +463,76 @@ async def ai_query(question: str):
                 prefix_lines.append(f"PREFIX {prefix}: <{uri}>")
         if prefix_lines:
             sparql = "\n".join(prefix_lines) + "\n" + sparql
+
+        # Auto-fix: expand cls:PropertyName to <cls_base/ClassName#propertyName>
+        # using class_properties mapping to find the correct class for each property
+        import re as _re
+        cls_base = summary["prefixes"].get("cls", "")
+        if cls_base and summary.get("class_properties"):
+            # Build property-name -> list of ClassNames (a property can belong to multiple classes)
+            prop_to_classes: dict[str, list[str]] = {}
+            for cls_name, prop_list in summary["class_properties"].items():
+                for prop_uri in prop_list:
+                    if "#" in prop_uri:
+                        prop_local = prop_uri.split("#", 1)[-1]
+                    else:
+                        prop_local = prop_uri.rsplit("/", 1)[-1]
+                    prop_to_classes.setdefault(prop_local, []).append(cls_name)
+
+            # Detect classes referenced in the query via "?var a cls:ClassName" or "a cls:ClassName"
+            query_classes: set[str] = set()
+            for m in _re.finditer(r'a\s+cls:(\w+)', sparql):
+                query_classes.add(m.group(1))
+
+            # Replace cls:propName but NOT cls:ClassName (when used as type)
+            known_classes = set(summary["classes"])
+            tokens = _re.findall(r'cls:(\w+)', sparql)
+            expanded_tokens = set()
+            for t in tokens:
+                if t not in known_classes:
+                    expanded_tokens.add(t)
+            if expanded_tokens:
+                for prop_name in expanded_tokens:
+                    if prop_name in prop_to_classes:
+                        candidates = prop_to_classes[prop_name]
+                        # Prefer the class that appears in the query
+                        matched = [c for c in candidates if c in query_classes]
+                        cn = matched[0] if matched else candidates[0]
+                        sparql = sparql.replace(
+                            f"cls:{prop_name}",
+                            f"<{cls_base}{cn}#{prop_name}>"
+                        )
+
+        # Auto-fix: move ORDER BY / LIMIT / OFFSET from inside {} to after }
+        closing_brace_pos = sparql.rfind("}")
+        if closing_brace_pos > 0:
+            after_brace = sparql[closing_brace_pos + 1:].strip()
+            before_brace = sparql[:closing_brace_pos + 1]
+            trailing_modifiers = ""
+            for mod in ["ORDER BY", "LIMIT", "OFFSET"]:
+                pattern = rf'\s+{mod}\b[^\}}]*'
+                match_inside = _re.search(pattern, before_brace)
+                if match_inside:
+                    mod_text = match_inside.group(0).strip()
+                    # Check it's actually inside the WHERE body (not part of a sub-select)
+                    # Only remove if it appears after the last { and before }
+                    last_open = before_brace.rfind("{")
+                    brace_depth = 0
+                    for ch in before_brace[last_open:]:
+                        if ch == "{":
+                            brace_depth += 1
+                        elif ch == "}":
+                            brace_depth -= 1
+                    if brace_depth == 0 and last_open > 0:
+                        # It's at the top level WHERE - need to move it outside
+                        pass
+                    else:
+                        continue
+                    trailing_modifiers += f" {mod_text}"
+                    before_brace = before_brace[:match_inside.start()] + before_brace[match_inside.end():]
+
+            if trailing_modifiers:
+                sparql = before_brace.rstrip() + "\n" + trailing_modifiers.strip()
 
         yield {"event": "sparql", "data": json.dumps({"step": "sparql_generated", "sparql": sparql})}
 

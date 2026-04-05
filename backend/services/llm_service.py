@@ -44,18 +44,70 @@ def build_sparql_prompt(
     relationships: list[str],
     prefixes: dict[str, str],
     template: Optional[str] = None,
+    class_properties: Optional[dict[str, list[str]]] = None,
 ) -> str:
     """Build the SPARQL generation system prompt."""
     if template is None:
-        template = "你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。\n\n本体结构:\n- 类: {classes}\n- 数据属性: {properties}\n- 对象属性(关系): {relationships}\n\n声明的 Prefix:\n{prefixes}\n"
+        template = DEFAULT_SPARQL_TEMPLATE
 
     prefix_str = "\n".join(f"PREFIX {k}: <{v}>" for k, v in prefixes.items())
-    return template.format(
-        classes=", ".join(classes),
-        properties=", ".join(properties),
-        relationships=", ".join(relationships),
-        prefixes=prefix_str,
-    )
+
+    # Build per-class property description
+    class_prop_str = ""
+    if class_properties:
+        lines = []
+        for cls_name, props in sorted(class_properties.items()):
+            lines.append(f"  {cls_name}: {', '.join(props)}")
+        class_prop_str = "\n".join(lines)
+
+    cls_base = prefixes.get("cls", "")
+
+    # Use format with safe fallback for missing placeholders
+    fmt_args = {
+        "classes": ", ".join(classes),
+        "properties": ", ".join(properties),
+        "relationships": ", ".join(relationships),
+        "prefixes": prefix_str,
+        "class_properties": class_prop_str,
+        "cls_base": cls_base,
+    }
+    try:
+        return template.format(**fmt_args)
+    except KeyError:
+        # Custom template may use different placeholders; use safe partial formatting
+        import string
+        class SafeDict(dict):
+            def __missing__(self, key):
+                return "{" + key + "}"
+        return string.Formatter().vformat(template, (), SafeDict(fmt_args))
+
+
+DEFAULT_SPARQL_TEMPLATE = """你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。
+
+声明的 Prefix:
+{prefixes}
+
+本体类及其属性（属性格式为 ClassName#attrName，使用时必须加尖括号变为 <{cls_base}ClassName#attrName>）:
+{class_properties}
+
+规则:
+1. 只返回一条 SPARQL 查询，不要任何解释文字
+2. 变量使用问号前缀（如 ?name）
+3. 使用 PREFIX 声明命名空间
+4. 中文值直接用引号匹配
+5. 类 URI: 直接用 cls:ClassName（如 cls:river）
+6. 属性 URI: 必须用尖括号包裹完整路径，格式为 <{cls_base}ClassName#attrName>。例如查 river 的 name 属性，必须写 <{cls_base}river#name>，绝对不能写 cls:name
+7. ORDER BY、LIMIT、OFFSET 必须放在最外层花括号 }} 之后
+
+正确示例（查询所有国家名称和人口，按人口降序取前5）:
+PREFIX cls: <{cls_base}>
+SELECT ?name ?pop WHERE {{
+  ?c a cls:country ;
+     <{cls_base}country#name> ?name ;
+     <{cls_base}country#population> ?pop .
+}}
+ORDER BY DESC(?pop)
+LIMIT 5"""
 
 
 async def generate_sparql(system_prompt: str, question: str) -> str:
