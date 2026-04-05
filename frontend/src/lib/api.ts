@@ -594,3 +594,90 @@ export const annotations = {
     ),
 };
 
+// ── Business Glossary ────────────────────────────────────
+
+export type GlossaryEntityKind = 'class' | 'data_property' | 'object_property';
+
+export interface GlossaryTerm {
+  id:                string;
+  ds_id:             string;
+  term:              string;
+  aliases:           string[];
+  entity_uri:        string;
+  entity_kind:       GlossaryEntityKind;
+  description:       string;
+  example_questions: string[];
+  source:            'human' | 'llm';
+  created_at:        string;
+  updated_at:        string | null;
+}
+
+export interface GlossaryStats {
+  human: number;
+  llm:   number;
+  total: number;
+}
+
+export interface GlossaryTermCreate {
+  term:              string;
+  entity_uri:        string;
+  entity_kind?:      GlossaryEntityKind;
+  aliases?:          string[];
+  description?:      string;
+  example_questions?: string[];
+  source?:           'human' | 'llm';
+}
+
+export const glossary = {
+  /** 列出词汇（默认合并全局词汇） */
+  list: (dsId: string, params?: { q?: string; entity_kind?: GlossaryEntityKind; include_global?: boolean }) => {
+    const q = new URLSearchParams();
+    if (params?.q)              q.set('q', params.q);
+    if (params?.entity_kind)    q.set('entity_kind', params.entity_kind);
+    if (params?.include_global === false) q.set('include_global', 'false');
+    const qs = q.toString() ? `?${q}` : '';
+    return api<GlossaryTerm[]>(`/glossary/${dsId}${qs}`);
+  },
+
+  /** 各来源数量统计 */
+  stats: (dsId: string) =>
+    api<GlossaryStats>(`/glossary/${dsId}/stats`),
+
+  /** 创建/覆盖一条词汇 */
+  create: (dsId: string, body: GlossaryTermCreate) =>
+    api<GlossaryTerm>(`/glossary/${dsId}`, {
+      method: 'POST',
+      body:   JSON.stringify(body),
+    }),
+
+  /** 编辑词汇 */
+  update: (dsId: string, termId: string, body: GlossaryTermCreate) =>
+    api<GlossaryTerm>(`/glossary/${dsId}/${termId}`, {
+      method: 'PUT',
+      body:   JSON.stringify(body),
+    }),
+
+  /** 删除词汇 */
+  delete: (dsId: string, termId: string) =>
+    api<{ deleted: boolean }>(`/glossary/${dsId}/${termId}`, { method: 'DELETE' }),
+
+  /** LLM 自动从注释层生成词汇（后台任务） */
+  generate: (dsId: string) =>
+    api<{ message: string; accepted_annotations: number; estimated_terms: number }>(
+      `/glossary/${dsId}/generate`,
+      { method: 'POST' },
+    ),
+
+  /** 导出全部词汇为 JSON */
+  exportJson: (dsId: string) =>
+    api<{ ds_id: string; terms: GlossaryTerm[] }>(`/glossary/${dsId}/export`),
+
+  /** 批量导入词汇 */
+  importJson: (dsId: string, terms: GlossaryTermCreate[], overwrite = false) =>
+    api<{ imported: number; overwrite: boolean }>(`/glossary/${dsId}/import`, {
+      method: 'POST',
+      body:   JSON.stringify({ terms, overwrite }),
+    }),
+};
+
+

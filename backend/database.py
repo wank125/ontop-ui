@@ -145,6 +145,27 @@ CREATE TABLE IF NOT EXISTS semantic_annotations (
 
 CREATE INDEX IF NOT EXISTS idx_ann_ds     ON semantic_annotations(ds_id, status);
 CREATE INDEX IF NOT EXISTS idx_ann_entity ON semantic_annotations(ds_id, entity_uri);
+
+-- 业务词汇表：显式的业务词 → 本体属性/类 映射，注入 SPARQL 生成 Prompt
+-- ds_id='' 表示全局词汇，查询时合并当前数据源词汇 + 全局词汇
+CREATE TABLE IF NOT EXISTS business_glossary (
+    id                  TEXT PRIMARY KEY,
+    ds_id               TEXT NOT NULL DEFAULT '',   -- '' = 全局
+    term                TEXT NOT NULL,              -- 主业务词汇（如"欠款"）
+    aliases             TEXT NOT NULL DEFAULT '[]', -- JSON 数组，别名
+    entity_uri          TEXT NOT NULL,              -- 本体 local name（如 "bill#balance_overdue"）
+    entity_kind         TEXT NOT NULL DEFAULT 'data_property',
+    description         TEXT NOT NULL DEFAULT '',
+    example_questions   TEXT NOT NULL DEFAULT '[]', -- JSON 数组，示例问法
+    source              TEXT NOT NULL DEFAULT 'human', -- 'human' | 'llm'
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT,
+    UNIQUE(ds_id, term)
+);
+
+CREATE INDEX IF NOT EXISTS idx_glossary_ds   ON business_glossary(ds_id);
+CREATE INDEX IF NOT EXISTS idx_glossary_term ON business_glossary(term);
+
 """
 
 

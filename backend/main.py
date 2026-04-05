@@ -73,22 +73,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import datasources, mappings, sparql, ai_query, ontology, workbench, publishing, annotations
+from routers import datasources, mappings, sparql, ai_query, ontology, workbench, publishing, annotations, glossary
 
-app.include_router(datasources.router, prefix="/api/v1")
-app.include_router(mappings.router, prefix="/api/v1")
-app.include_router(sparql.router, prefix="/api/v1")
-app.include_router(ai_query.router, prefix="/api/v1")
-app.include_router(ontology.router, prefix="/api/v1")
-app.include_router(workbench.router, prefix="/api/v1")
-app.include_router(publishing.router, prefix="/api/v1")
-app.include_router(annotations.router, prefix="/api/v1")
+app.include_router(datasources.router,  prefix="/api/v1")
+app.include_router(mappings.router,     prefix="/api/v1")
+app.include_router(sparql.router,       prefix="/api/v1")
+app.include_router(ai_query.router,     prefix="/api/v1")
+app.include_router(ontology.router,     prefix="/api/v1")
+app.include_router(workbench.router,    prefix="/api/v1")
+app.include_router(publishing.router,   prefix="/api/v1")
+app.include_router(annotations.router,  prefix="/api/v1")
+app.include_router(glossary.router,     prefix="/api/v1")
 
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next) -> Response:
-    # MCP auth check for mounted ASGI sub-app
-    if request.url.path.startswith("/mcp"):
+    # Auth check for external-facing routes (/mcp and /api/v1)
+    _auth_paths = ("/mcp", "/api/v1")
+    _skip_paths = ("/api/v1/docs", "/api/v1/openapi.json", "/api/v1/redoc")
+    path = request.url.path
+    if path.startswith(_auth_paths) and not path.startswith(_skip_paths):
         try:
             from dependencies.auth import verify_api_key
             await verify_api_key(request)

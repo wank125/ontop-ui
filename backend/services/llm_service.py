@@ -46,8 +46,15 @@ def build_sparql_prompt(
     template: Optional[str] = None,
     class_properties: Optional[dict[str, list[str]]] = None,
     class_labels: Optional[dict[str, str]] = None,
+    glossary: Optional[list[dict]] = None,
+    question: Optional[str] = None,
 ) -> str:
-    """Build the SPARQL generation system prompt."""
+    """Build the SPARQL generation system prompt.
+
+    Args:
+        glossary:  业务词汇表条目列表，每条含 term/aliases/entity_uri/entity_kind
+        question:  当前用户问题，用于关键词匹配，只注入相关词汇（Top-K）
+    """
     if template is None:
         template = DEFAULT_SPARQL_TEMPLATE
 
@@ -65,6 +72,18 @@ def build_sparql_prompt(
 
     cls_base = prefixes.get("cls", "")
 
+    # Build glossary injection string
+    glossary_str = ""
+    if glossary:
+        matched = _match_glossary(question or "", glossary)
+        if matched:
+            lines = []
+            for t in matched:
+                all_terms = [t["term"]] + (t.get("aliases") or [])
+                terms_str = " / ".join(all_terms)
+                lines.append(f"- {terms_str}  →  {t['entity_uri']}")
+            glossary_str = "\n".join(lines)
+
     # Use format with safe fallback for missing placeholders
     fmt_args = {
         "classes": ", ".join(classes),
@@ -73,6 +92,7 @@ def build_sparql_prompt(
         "prefixes": prefix_str,
         "class_properties": class_prop_str,
         "cls_base": cls_base,
+        "glossary": glossary_str,
     }
     try:
         return template.format(**fmt_args)
@@ -83,6 +103,40 @@ def build_sparql_prompt(
             def __missing__(self, key):
                 return "{" + key + "}"
         return string.Formatter().vformat(template, (), SafeDict(fmt_args))
+
+
+def _match_glossary(question: str, glossary: list[dict], top_k: int = 12) -> list[dict]:
+    """根据问题关键词过滤词汇表，返回最相关的 top_k 条。
+
+    若 question 为空（如 Prompt 预构建场景），返回前 top_k 条。
+    """
+    if not glossary:
+        return []
+    if not question.strip():
+        return glossary[:top_k]
+
+    q_lower = question.lower()
+    scored: list[tuple[int, dict]] = []
+    for t in glossary:
+        score = 0
+        if t["term"] in question:
+            score += 3
+        for alias in (t.get("aliases") or []):
+            if alias in question:
+                score += 2
+        if t["entity_uri"].lower() in q_lower:
+            score += 1
+        if score > 0:
+            scored.append((score, t))
+
+    if scored:
+        scored.sort(key=lambda x: -x[0])
+        return [t for _, t in scored[:top_k]]
+
+    # 没有命中则返回全量前 top_k（兜底）
+    return glossary[:top_k]
+
+
 
 
 DEFAULT_SPARQL_TEMPLATE = """你是一个 SPARQL 查询生成器。根据本体结构将用户问题翻译为 SPARQL 查询。
@@ -101,6 +155,10 @@ DEFAULT_SPARQL_TEMPLATE = """你是一个 SPARQL 查询生成器。根据本体�
 5. 类 URI: 直接用 cls:ClassName（如 cls:river）
 6. 属性 URI: 必须用尖括号包裹完整路径，格式为 <{cls_base}ClassName#attrName>。例如查 river 的 name 属性，必须写 <{cls_base}river#name>，绝对不能写 cls:name
 7. ORDER BY、LIMIT、OFFSET 必须放在最外层花括号 }} 之后
+8. 当下方业务词汇表不为空时，遇到用户提到的业务词汇，必须使用对应的属性 URI，不得自行猜测
+
+业务词汇对照表（优先使用）：
+{glossary}
 
 正确示例（查询所有国家名称和人口，按人口降序取前5）:
 PREFIX cls: <{cls_base}>

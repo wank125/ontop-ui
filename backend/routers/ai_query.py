@@ -616,13 +616,31 @@ async def ontology_summary():
 
     profile = _detect_ontology_profile(class_property_summary, object_properties)
 
+    # ── Step 6: 加载业务词汇表（注入 SPARQL Prompt）────────────────
+    glossary_terms: list[dict] = []
+    try:
+        from repositories.glossary_repo import list_terms
+        mapping_path = active.get("mapping_path", "")
+        ds_id = ""
+        if mapping_path:
+            from pathlib import Path as _Path
+            parts = _Path(mapping_path).parts
+            for idx, part in enumerate(parts):
+                if part == "data" and idx + 1 < len(parts):
+                    ds_id = parts[idx + 1]
+                    break
+        glossary_terms = list_terms(ds_id, include_global=True)
+    except Exception as _ge:
+        logger.warning("Failed to load glossary: %s", _ge)
+
     return {
         "classes": sorted(classes),
         "data_properties": sorted(data_properties),
         "object_properties": sorted(object_properties),
         "prefixes": namespaces,
         "class_properties": class_property_summary,
-        "class_labels": class_labels,           # 新增：含中英文标注，用于 prompt 富化
+        "class_labels": class_labels,
+        "glossary_terms": glossary_terms,
         "ontology_profile": profile,
     }
 
@@ -651,7 +669,9 @@ async def ai_query(question: str):
             prefixes=summary["prefixes"],
             template=custom_prompt,
             class_properties=summary.get("class_properties"),
-            class_labels=summary.get("class_labels"),   # 传入 TTL 语义标注，提升 LLM 理解准确率
+            class_labels=summary.get("class_labels"),
+            glossary=summary.get("glossary_terms"),   # 业务词汇表
+            question=question,                         # 用于关键词匹配过滤
         )
 
         sparql = await generate_sparql(prompt, question)

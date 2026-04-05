@@ -1,0 +1,14 @@
+{
+  "version": "bootstrap-full-20260405-125212",
+  "mode": "full",
+  "requested_tables": [],
+  "resolved_tables": [],
+  "added_dependencies": [],
+  "include_dependencies": true,
+  "base_iri": "http://example.com/lvfa/",
+  "created_at": "2026-04-05T12:52:13.057364",
+  "raw_ontology_path": "/app/data/2adc5235/bootstrap-full-20260405-125212/LVFA_PostgreSQL_Host_ontology.ttl",
+  "ontology_path": "/app/data/2adc5235/bootstrap-full-20260405-125212/LVFA_PostgreSQL_Host_ontology.ttl",
+  "mapping_path": "/app/data/2adc5235/bootstrap-full-20260405-125212/LVFA_PostgreSQL_Host_mapping.obda",
+  "properties_path": "/app/data/2adc5235/bootstrap-full-20260405-125212/LVFA_PostgreSQL_Host.properties"
+}
