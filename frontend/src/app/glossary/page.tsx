@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
@@ -38,7 +39,6 @@ import {
   Layers,
   Link2,
 } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { glossary, datasources, type GlossaryTerm, type GlossaryEntityKind, type DataSource } from '@/lib/api';
 
 // ── Constants ─────────────────────────────────────────────
@@ -63,6 +63,33 @@ const EMPTY_FORM = {
   description: '',
   example_questions: '',
 };
+
+function StatCard({
+  title,
+  value,
+  hint,
+  icon: Icon,
+}: {
+  title: string;
+  value: string;
+  hint: string;
+  icon: typeof BookMarked;
+}) {
+  return (
+    <Card className="border-border/70 bg-card/70">
+      <CardContent className="flex items-start justify-between p-4">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
+          <p className="text-lg font-semibold text-foreground">{value}</p>
+          <p className="text-xs text-muted-foreground">{hint}</p>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 // ── Main Component ─────────────────────────────────────────
 
@@ -218,46 +245,72 @@ export default function GlossaryPage() {
   };
 
   // ── Render ───────────────────────────────────────────────
+  const selectedDs = dsList.find(ds => ds.id === dsId);
+  const hostLabel = selectedDs?.jdbc_url.split('//')[1]?.split('/')[0] ?? '未选择';
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500/20 to-indigo-500/20 border border-sky-500/20">
-          <BookMarked className="h-5 w-5 text-sky-400" />
+    <div className="space-y-6 pb-8">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[oklch(0.65_0.18_200)] to-[oklch(0.70_0.15_280)] shadow-sm">
+              <BookMarked className="h-5 w-5 text-white" />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold text-foreground">业务词汇表</h1>
+              <p className="text-sm text-muted-foreground">
+                将业务口语词显式映射到本体属性和类，并自动注入 AI 查询上下文。
+              </p>
+            </div>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-[var(--foreground)]">业务词汇表</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            业务口语词 → 本体属性/类 的显式映射，自动注入 AI 查询 Prompt
-          </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary">
+            当前数据源: {selectedDs?.name ?? '未选择'}
+          </Badge>
+          <Badge variant="outline" className="border-border/70 bg-card/70">
+            Host: {hostLabel}
+          </Badge>
+          <Badge variant="outline" className="border-sky-500/30 bg-sky-500/10 text-sky-400">
+            人工条目优先
+          </Badge>
         </div>
       </div>
 
-      {/* Data source selector */}
-      <div className="flex items-center gap-3">
-        <Database className="h-4 w-4 text-[var(--muted-foreground)]" />
-        <span className="text-sm text-[var(--muted-foreground)]">数据源：</span>
-        <Select value={dsId} onValueChange={setDsId}>
-          <SelectTrigger className="w-64 bg-[var(--card)] border-[var(--border)]">
-            <SelectValue placeholder="选择数据源…" />
-          </SelectTrigger>
-          <SelectContent className="bg-[var(--card)] border-[var(--border)]">
-            {dsList.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="词汇总数" value={String(stats.total)} hint="当前数据源已收录条目" icon={BookMarked} />
+        <StatCard title="LLM 生成" value={String(stats.llm)} hint="由已审核注释自动推导" icon={Sparkles} />
+        <StatCard title="人工添加" value={String(stats.human)} hint="手工维护且不会被覆盖" icon={User} />
+        <StatCard title="映射范围" value={dsId ? '当前数据源' : '未选择'} hint="可映射到本体属性 / 类" icon={Database} />
       </div>
 
-      {/* Tips */}
-      <Alert className="border-sky-500/20 bg-sky-500/5">
-        <Bot className="h-4 w-4 text-sky-400" />
-        <AlertDescription className="text-xs text-[var(--muted-foreground)]">
-          <strong className="text-[var(--foreground)]">使用说明：</strong>{' '}
-          点击「🤖 自动生成」从已审核的语义注释中推导业务词汇；也可手动添加。
-          词汇表会在 AI 查询时根据用户问题关键词自动筛选注入，无需人工触发。
-          <strong className="text-[var(--foreground)]">人工添加的词汇不会被自动生成覆盖。</strong>
-        </AlertDescription>
-      </Alert>
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card className="border-border/70 bg-card/80">
+          <CardContent className="space-y-3 p-4">
+            <div className="text-sm font-medium text-foreground">使用说明</div>
+            <p className="text-sm leading-6 text-muted-foreground">
+              点击「自动生成」从已审核的语义注释中推导业务词汇；也可手动添加。
+              词汇会在 AI 查询时按用户问题关键词自动筛选注入，人工添加的词汇不会被自动生成覆盖。
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/70 bg-card/80">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              分析上下文
+            </div>
+            <Select value={dsId} onValueChange={setDsId}>
+              <SelectTrigger className="w-full bg-background border-[var(--border)]">
+                <SelectValue placeholder="选择数据源…" />
+              </SelectTrigger>
+              <SelectContent className="bg-[var(--card)] border-[var(--border)]">
+                {dsList.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Stats + Actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -350,7 +403,7 @@ export default function GlossaryPage() {
           <div className="flex h-40 flex-col items-center justify-center gap-2 text-[var(--muted-foreground)] text-sm">
             <BookMarked className="h-8 w-8 opacity-30" />
             {terms.length === 0
-              ? '暂无词汇表，点击「🤖 自动生成」或「新增词汇」开始'
+              ? '暂无词汇表，点击「自动生成」或「新增词汇」开始'
               : '没有匹配的词汇'}
           </div>
         ) : (

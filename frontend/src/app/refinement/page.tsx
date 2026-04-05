@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -11,10 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Alert,
-  AlertDescription,
-} from '@/components/ui/alert';
 import {
   CheckCircle2,
   ChevronDown,
@@ -69,6 +66,33 @@ const STATUS_STYLE: Record<SuggestionStatus, string> = {
 const STATUS_TEXT: Record<SuggestionStatus, string> = {
   pending: '待处理', accepted: '已接受', rejected: '已拒绝', applied: '已应用',
 };
+
+function StatCard({
+  title,
+  value,
+  hint,
+  icon: Icon,
+}: {
+  title: string;
+  value: string;
+  hint: string;
+  icon: typeof Wand2;
+}) {
+  return (
+    <Card className="border-border/70 bg-card/70">
+      <CardContent className="flex items-start justify-between p-4">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
+          <p className="text-lg font-semibold text-foreground">{value}</p>
+          <p className="text-xs text-muted-foreground">{hint}</p>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 // ── Main Component ─────────────────────────────────────────
 
@@ -160,47 +184,79 @@ export default function OntologySuggestionsPage() {
     setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const acceptedCount = items.filter(s => s.status === 'accepted' && s.auto_apply).length;
+  const selectedDs = dsList.find(d => d.id === dsId);
+  const hostLabel = selectedDs?.jdbc_url.split('//')[1]?.split('/')[0] ?? '未选择';
+  const pendingChanges = stats.pending + stats.accepted;
 
   // ── Render ───────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-violet-500/20">
-          <Wand2 className="h-5 w-5 text-violet-400" />
+    <div className="space-y-6 pb-8">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[oklch(0.70_0.15_280)] to-[oklch(0.65_0.18_200)] shadow-sm">
+              <Wand2 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">本体精化建议</h1>
+              <p className="text-sm text-muted-foreground">
+                LLM 分析本体结构，生成命名、类型与层次改进建议，并支持低风险项自动应用。
+              </p>
+            </div>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-[var(--foreground)]">本体精化建议</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            LLM 分析本体结构，给出命名、类型、层次改进建议并支持自动应用
-          </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary">
+            当前数据源: {selectedDs?.name ?? '未选择'}
+          </Badge>
+          <Badge variant="outline" className="border-border/70 bg-card/70">
+            Host: {hostLabel}
+          </Badge>
+          {pendingChanges > 0 && (
+            <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-500">
+              {pendingChanges} 条待决策
+            </Badge>
+          )}
         </div>
       </div>
 
-      {/* DS selector */}
-      <div className="flex items-center gap-3">
-        <Database className="h-4 w-4 text-[var(--muted-foreground)]" />
-        <span className="text-sm text-[var(--muted-foreground)]">数据源：</span>
-        <Select value={dsId} onValueChange={setDsId}>
-          <SelectTrigger className="w-64 bg-[var(--card)] border-[var(--border)]">
-            <SelectValue placeholder="选择数据源…" />
-          </SelectTrigger>
-          <SelectContent className="bg-[var(--card)] border-[var(--border)]">
-            {dsList.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <StatCard title="当前数据源" value={selectedDs?.name ?? '未选择'} hint="当前精化分析上下文" icon={Database} />
+        <StatCard title="待处理" value={String(stats.pending)} hint="等待人工确认的建议" icon={Sparkles} />
+        <StatCard title="已接受" value={String(stats.accepted)} hint="可进入应用阶段" icon={CheckCircle2} />
+        <StatCard title="已拒绝" value={String(stats.rejected)} hint="不会参与后续应用" icon={XCircle} />
+        <StatCard title="已应用" value={String(stats.applied)} hint="已写回本体文件" icon={Zap} />
       </div>
 
-      {/* Tips */}
-      <Alert className="border-violet-500/20 bg-violet-500/5">
-        <Sparkles className="h-4 w-4 text-violet-400" />
-        <AlertDescription className="text-xs text-[var(--muted-foreground)]">
-          <strong className="text-[var(--foreground)]">使用说明：</strong>{' '}
-          先完成注释审核（/annotations），再点击「AI 分析」生成精化建议。
-          可逐条接受/拒绝，接受后点「批量应用」将 RENAME/REFINE_TYPE 类建议自动写入 TTL。
-          <strong className="text-[var(--foreground)]"> ADD_SUBCLASS 需人工操作。</strong>
-        </AlertDescription>
-      </Alert>
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card className="border-border/70 bg-card/80">
+          <CardContent className="space-y-3 p-4">
+            <div className="text-sm font-medium text-foreground">使用说明</div>
+            <p className="text-sm leading-6 text-muted-foreground">
+              先完成语义标注审核，再发起 AI 分析生成建议；接受后的低风险建议可批量应用，
+              <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">ADD_SUBCLASS</code>
+              仍需人工操作。
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/70 bg-card/80">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              分析上下文
+            </div>
+            <Select value={dsId} onValueChange={setDsId}>
+              <SelectTrigger className="w-full bg-background border-[var(--border)]">
+                <SelectValue placeholder="选择数据源…" />
+              </SelectTrigger>
+              <SelectContent className="bg-[var(--card)] border-[var(--border)]">
+                {dsList.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Stats + Actions */}
       <div className="flex items-center justify-between flex-wrap gap-3">
