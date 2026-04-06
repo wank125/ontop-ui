@@ -16,6 +16,14 @@ backend/data/*/
 backend/data-*/
 backend/=*
 
+# Docker endpoint runtime active dirs (populated at runtime, not source-controlled)
+docker/endpoint/active/
+docker/endpoint/lvfa-active/
+docker/endpoint/*/active.properties
+docker/endpoint/*/active_mapping.obda
+docker/endpoint/*/active_ontology.ttl
+
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
