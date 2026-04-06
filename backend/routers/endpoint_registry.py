@@ -40,7 +40,6 @@ async def activate_datasource(ds_id: str, background_tasks: BackgroundTasks):
     """
     from repositories.endpoint_registry_repo import get_by_ds_id
     from services.endpoint_switcher import switch_to_datasource
-    import asyncio
 
     reg = get_by_ds_id(ds_id)
     if not reg:
