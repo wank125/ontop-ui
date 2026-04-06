@@ -25,7 +25,6 @@
 import json
 import logging
 import re
-import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
