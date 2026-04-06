@@ -35,7 +35,7 @@ async def analyze(ds_id: str, background_tasks: BackgroundTasks):
         except Exception as e:
             logger.error("Ontology analysis failed: ds_id=%s, error=%s", ds_id, e)
 
-    background_tasks.add_task(asyncio.create_task, _run())
+    background_tasks.add_task(_run)
     return {"message": "本体分析任务已启动（后台运行）", "ds_id": ds_id}
 
 
@@ -89,9 +89,9 @@ async def apply_single(ds_id: str, sug_id: str):
             detail=f"该建议类型 [{sug['type']}] 不支持自动应用，请人工处理",
         )
 
-    # 获取 TTL 路径
+    # 获取 active TTL 路径（优先 active_dir/merged_ontology.ttl，fallback ontology_path）
     reg = get_by_ds_id(ds_id)
-    ttl_path = reg.get("ontology_path", "") if reg else ""
+    ttl_path = _resolve_active_ttl(reg) if reg else ""
     if not ttl_path:
         raise HTTPException(status_code=422, detail="未找到该数据源的本体文件路径，请先 Bootstrap")
 
@@ -110,7 +110,7 @@ async def batch_apply(ds_id: str):
     from repositories.endpoint_registry_repo import get_by_ds_id
 
     reg = get_by_ds_id(ds_id)
-    ttl_path = reg.get("ontology_path", "") if reg else ""
+    ttl_path = _resolve_active_ttl(reg) if reg else ""
     if not ttl_path:
         raise HTTPException(status_code=422, detail="未找到该数据源的本体文件路径")
 
@@ -129,3 +129,14 @@ async def batch_apply(ds_id: str):
     applied   = sum(1 for r in results if r["success"])
     skipped   = len(results) - applied
     return {"applied": applied, "skipped": skipped, "results": results}
+
+
+def _resolve_active_ttl(reg: dict) -> str:
+    """优先使用 active_dir/merged_ontology.ttl，否则 fallback 到 ontology_path。"""
+    from pathlib import Path
+    active_dir = reg.get("active_dir", "")
+    if active_dir:
+        merged = Path(active_dir) / "merged_ontology.ttl"
+        if merged.exists():
+            return str(merged)
+    return reg.get("ontology_path", "")

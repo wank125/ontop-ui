@@ -211,7 +211,7 @@ async def run_bootstrap(ds_id: str, req: BootstrapRequest):
     ds_record = repo_get(ds_id)
     register_endpoint(
         ds_id=ds_id,
-        ds_name=ds_record.name if ds_record else ds_id,
+        ds_name=ds_record["name"] if ds_record else ds_id,
         active_dir=str(active_dir),
         ontology_path=onto_path,
         mapping_path=mapping_path,

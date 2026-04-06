@@ -85,26 +85,65 @@ def _rename_in_ttl(ttl_path: str, current: str, proposed: str, kind: str) -> tup
     return True, f"已将 '{current}' 重命名为 '{proposed}'（{count} 处），备份：{backup_path}"
 
 
-def _refine_xsd_type(ttl_path: str, current_type: str, proposed_type: str) -> tuple[bool, str]:
-    """替换 rdfs:range 中的 XSD 类型。"""
+def _refine_xsd_type(ttl_path: str, property_uri: str, proposed_type: str) -> tuple[bool, str]:
+    """替换或追加指定属性的 rdfs:range XSD 类型。
+
+    TTL 中属性声明可能有两种形式：
+      1) 已有 range: <…#balance> rdfs:range xsd:string ;  → 替换
+      2) 无 range:   <…#account_id> rdf:type owl:DatatypeProperty . → 追加 rdfs:range
+
+    Args:
+        property_uri:  属性 URI（如 ':account#balance' 或 'account#balance'）
+        proposed_type: 目标 XSD 类型（如 'decimal', 'date', 'integer'）
+    """
     path = Path(ttl_path)
     if not path.exists():
         return False, f"TTL 文件不存在：{ttl_path}"
 
     content = path.read_text(encoding="utf-8")
+    original = content
 
-    # 替换 xsd:oldType → xsd:newType（精确匹配有界词）
-    old = f"xsd:{current_type}"
-    new = f"xsd:{proposed_type}"
-    if old not in content:
-        return False, f"未找到类型 '{old}'，无需修改"
+    # 提取 local name 用于匹配（支持 ':account#balance' 和 'account#balance'）
+    local = property_uri.lstrip(":")
+    escaped = re.escape(local)
 
-    new_content = content.replace(old, new)
-    backup = path.with_suffix(".ttl.bak")
-    backup.write_text(content, encoding="utf-8")
-    path.write_text(new_content, encoding="utf-8")
-    count = content.count(old)
-    return True, f"已将 '{old}' 精化为 '{new}'（{count} 处），备份：{backup}"
+    # ── 策略 1: 替换已有的 rdfs:range xsd:xxx ──
+    replace_pattern = re.compile(
+        r'(?m)^(.*' + escaped + r'.*rdfs:range\s+)xsd:\w+(.*)$',
+    )
+    matches = list(replace_pattern.finditer(original))
+    if matches:
+        def _replacer(m):
+            return f"{m.group(1)}xsd:{proposed_type}{m.group(2)}"
+        content = replace_pattern.sub(_replacer, content)
+        count = len(matches)
+        if content != original:
+            backup = path.with_suffix(".ttl.bak")
+            backup.write_text(original, encoding="utf-8")
+            path.write_text(content, encoding="utf-8")
+            logger.info("Replaced rdfs:range for '%s' → xsd:%s (%d occurrences) in %s",
+                        property_uri, proposed_type, count, ttl_path)
+            return True, f"已将 '{property_uri}' 的 rdfs:range 替换为 xsd:{proposed_type}（{count} 处），备份：{backup}"
+
+    # ── 策略 2: 属性声明无 rdfs:range，追加新行 ──
+    # 匹配 <…#propertyName> rdf:type owl:DatatypeProperty . 或 ObjectProperty
+    decl_pattern = re.compile(
+        r'(<[^>]*' + escaped + r'[^>]*>\s+rdf:type\s+owl:(?:Datatype|Object)Property\s*\.)',
+    )
+    decl_match = decl_pattern.search(content)
+    if decl_match:
+        insert_point = decl_match.end()
+        new_range_line = f"\n<http://example.com/ontop/{local}> rdfs:range xsd:{proposed_type} ."
+        content = content[:insert_point] + new_range_line + content[insert_point:]
+
+        backup = path.with_suffix(".ttl.bak")
+        backup.write_text(original, encoding="utf-8")
+        path.write_text(content, encoding="utf-8")
+        logger.info("Added rdfs:range xsd:%s for '%s' in %s", proposed_type, property_uri, ttl_path)
+        return True, f"已为 '{property_uri}' 追加 rdfs:range xsd:{proposed_type}，备份：{backup}"
+
+    # ── 策略 3: 完全匹配不到属性声明 ──
+    return False, f"未在 TTL 中找到属性 '{property_uri}' 的声明"
 
 
 def _add_label_to_annotation_layer(suggestion: dict) -> tuple[bool, str]:
@@ -124,7 +163,6 @@ def _add_label_to_annotation_layer(suggestion: dict) -> tuple[bool, str]:
             label=label_zh,
             comment="",
             source="llm",
-            status="pending",
         )
         return True, f"已将 '{label_zh}' 写入语义注释层（status=pending，请前往注释页审核）"
     except Exception as e:

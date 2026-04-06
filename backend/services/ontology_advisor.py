@@ -24,6 +24,8 @@
 """
 import json
 import logging
+import re
+import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -132,6 +134,78 @@ def _format_annotation_context(annotations: list[dict]) -> str:
     return "已审核的语义注释：\n" + "\n".join(lines[:50])
 
 
+def _repair_and_parse_json(raw: str) -> list[dict]:
+    """Attempt to repair common LLM JSON issues and parse.
+
+    Handles: unclosed string quotes, Chinese punctuation in values.
+    Strategy: extract individual {…} blocks via brace matching and parse each.
+    """
+    import pathlib
+    pathlib.Path("/tmp/llm_raw_debug.json").write_text(raw, encoding="utf-8")
+    logger.warning("Attempting JSON repair on raw output (length=%d)", len(raw))
+
+    results = []
+    # Find all { ... } blocks by tracking brace depth
+    i = 0
+    while i < len(raw):
+        if raw[i] == '{':
+            depth = 0
+            start = i
+            while i < len(raw):
+                if raw[i] == '{':
+                    depth += 1
+                elif raw[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        block = raw[start:i + 1]
+                        # Try to parse this block
+                        try:
+                            obj = json.loads(block)
+                            if obj.get("type") and obj.get("current_val"):
+                                results.append(obj)
+                        except json.JSONDecodeError:
+                            # Try fixing: ensure all string values are properly closed
+                            fixed = _fix_json_object(block)
+                            try:
+                                obj = json.loads(fixed)
+                                if obj.get("type") and obj.get("current_val"):
+                                    results.append(obj)
+                            except json.JSONDecodeError:
+                                pass
+                        break
+                i += 1
+        i += 1
+
+    logger.info("JSON repair extracted %d valid objects from raw output", len(results))
+    return results
+
+
+def _fix_json_object(block: str) -> str:
+    """Fix a single JSON object block by repairing unclosed strings."""
+    # Strategy: find "key": patterns and ensure the value string is closed
+    # Replace any \n inside strings with space
+    result = []
+    in_string = False
+    i = 0
+    while i < len(block):
+        ch = block[i]
+        if ch == '"' and (i == 0 or block[i - 1] != '\\'):
+            in_string = not in_string
+            result.append(ch)
+        elif in_string and ch == '\n':
+            # Unclosed string - close it and start next token
+            result.append('"')
+            in_string = False
+            result.append(ch)
+        else:
+            result.append(ch)
+        i += 1
+    # If still in string at end, close it
+    if in_string:
+        result.append('"')
+    return ''.join(result)
+
+
 async def _call_llm_for_suggestions(
     ontology_context: str,
     annotation_context: str,
@@ -147,7 +221,9 @@ async def _call_llm_for_suggestions(
         "  RENAME_PROPERTY：属性命名冗余（如 bill_amount / bill#bill_amount）\n"
         "  ADD_SUBCLASS：当类有明显父子关系时建议添加 rdfs:subClassOf\n"
         "  REFINE_TYPE：数据属性的 XSD 类型可以更精确（如 string→decimal/date）\n"
-        "  ADD_LABEL：实体缺少中文标注时建议补充\n\n"
+        "    current_val 填属性 URI（如 'Account#balance'），proposed_val 填目标 XSD 类型（如 'decimal'）\n"
+        "  ADD_LABEL：实体缺少中文标注时建议补充\n"
+        "    current_val 填实体 URI（如 ':meter'），proposed_val 填中文标签\n\n"
         "输出要求：\n"
         "  - 只返回 JSON 数组，不要任何说明文字\n"
         "  - 每个建议 5-10 条，优先给出高确定性的改进\n"
@@ -165,12 +241,28 @@ async def _call_llm_for_suggestions(
                 {"role": "user",   "content": user_msg},
             ],
             temperature=0.2,
-            max_tokens=2048,
+            max_tokens=4096,
         )
         raw = response.choices[0].message.content.strip()
         if raw.startswith("```"):
             raw = "\n".join(raw.split("\n")[1:-1]).strip()
-        suggestions = json.loads(raw)
+        # Extract JSON array from response
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start >= 0 and end > start:
+            raw = raw[start:end + 1]
+        # Fix common LLM JSON issues: trailing commas before } or ]
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)
+        # Remove control characters but keep \n \t for readability
+        raw = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", raw)
+
+        # Try direct parse first
+        try:
+            suggestions = json.loads(raw)
+        except json.JSONDecodeError:
+            # Fallback: fix unclosed quotes in JSON strings
+            # The LLM sometimes outputs "key": "value_without_closing_quote
+            suggestions = _repair_and_parse_json(raw)
         # 过滤无效条目
         valid = [
             s for s in suggestions
@@ -178,5 +270,10 @@ async def _call_llm_for_suggestions(
         ]
         return valid
     except Exception as e:
-        logger.warning("_call_llm_for_suggestions failed: %s", e)
+        logger.warning("_call_llm_for_suggestions failed: %s (raw length=%d)", e, len(raw) if 'raw' in dir() else 0)
+        # Dump raw output for debugging
+        if 'raw' in dir() and raw:
+            import pathlib
+            pathlib.Path("/tmp/llm_raw_debug.json").write_text(raw, encoding="utf-8")
+            logger.info("Raw LLM output dumped to /tmp/llm_raw_debug.json")
         return []

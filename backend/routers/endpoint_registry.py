@@ -55,7 +55,7 @@ async def activate_datasource(ds_id: str, background_tasks: BackgroundTasks):
         if not ok:
             logger.warning("Switch to %s failed: %s", ds_id, msg)
 
-    background_tasks.add_task(asyncio.create_task, _switch())
+    background_tasks.add_task(_switch)
 
     return {
         "message": f"切换任务已提交，目标数据源：{reg.get('ds_name', ds_id)}",
